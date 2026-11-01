@@ -4,6 +4,16 @@ All notable changes to claude-power-tools. Versions follow [semver](https://semv
 version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plugin.json`, which
 `npm test` keeps equal.
 
+## Unreleased
+
+### Added
+
+- **`usage-handoff`**: run `/loop /usage-handoff` in one session. When a Claude usage window
+  reaches 95% (`--threshold N` changes it), it asks every session to have its subagents report,
+  save their work and write a handoff to `~/.claude/usage-handoff/handoffs/`. After the reset it
+  tells live sessions to resume from their handoff and opens a new `claude` session for each one
+  that closed. A background waker does the restart if the loop itself ran out of usage.
+
 ## 0.6.0 (2026-10-31)
 
 Upgrading from 0.5? See "Upgrading from 0.5" in the README. The old `/update` can't follow the

@@ -115,6 +115,8 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /fleet-manager --deploy manual    Switch back to "every merge waits for me"
 /request-inbox init               Create .claude-inbox/; drop a .md file in it to hand off a task
 /request-inbox watch              Keep checking the inbox every 15 minutes
+/loop /usage-handoff              Near 95% usage, every session writes a handoff and stops;
+                                  the work restarts from them when the limit resets
 ```
 
 **Build and ship**
@@ -173,6 +175,7 @@ Skills marked † start only when you type them; Claude won't pick them on its o
 | **fleet-status** | Reads each session's status line (asking only those whose line is stale), shows a card per session plus unclaimed tracker tickets, and lets you message the sessions you pick. | — |
 | **pr-dashboard** | Shows open PRs in merge order with CI, queue ETAs, owners and a "Needs you" list. A script gathers every fact. | Python 3.10+ |
 | **request-inbox** | Handles requests you drop in `.claude-inbox/`: claims each one, acts on it, and answers in the file. | — |
+| **usage-handoff** | Watches your Claude usage limits. Near the top it has every session and its subagents write a handoff, then restarts the work from them after the reset (messaging live sessions, opening new ones for closed ones). Run as `/loop /usage-handoff`. | A Claude subscription login |
 
 ### Deliver work (power-tools)
 

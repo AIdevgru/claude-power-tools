@@ -1,0 +1,26 @@
+# Use case: handing off before the usage limit, and restarting after it
+
+Lee has four Claude sessions working on one repo, some with subagents of their own, and a Claude
+subscription with a 5-hour usage window.
+
+1. Lee runs `/loop /usage-handoff` in a fifth session. Each tick reads the same usage numbers
+   `/usage` shows. At 40% it checks back in an hour; at 80% every 15 minutes; at 85% every 5; at 92% every
+   2 minutes. The extra-usage credits don't count as a window.
+2. The 5-hour window reaches 96%. The tick says `handoff` and gives the reset time. The watcher
+   messages every session: stop starting work, ask your subagents where they are, WIP-commit, and
+   write `~/.claude/usage-handoff/handoffs/<session>.md` with `Status: pending`, the folder,
+   branch, PR, what's done, what's in flight and the next steps. It writes its own too.
+3. `mark-handoff` records the reset time and starts a background waker, a detached process that
+   doesn't depend on the session staying alive.
+4. Until the reset, ticks say `wait` and sleep until just after it. No second round of messages.
+   If the weekly window also fills up meanwhile, the wait moves to the later reset.
+5. The window resets. The watcher's tick says `resume`. It claims the resume, so the waker won't
+   repeat it, messages the sessions that are still open to resume from their handoff, and opens a
+   new terminal running `claude` in the handoff's folder for each session that closed.
+6. If the watcher ran out of usage itself and never woke up, the waker wakes three minutes after
+   the reset, claims the resume and starts one Claude session that runs `/usage-handoff resume`.
+   That session takes the claim over from the waker and does step 5.
+7. A live session that was told to resume but still hasn't marked its handoff after 15 minutes
+   shows up as `stalePending`, and the next tick opens a new session for it.
+8. If the usage endpoint can't be read (logged out, expired token, network), the tick says
+   `unknown` with the reason instead of guessing.
