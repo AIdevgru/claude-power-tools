@@ -456,7 +456,15 @@ export async function runHook(raw, now = Date.now()) {
   const { windows } = await cachedWindows(now, threshold);
   const notified = readJson(notifiedFile(), {});
   const plan = hookPlan({ input, windows, threshold, notified, now });
-  if (!plan) return null;
+  if (!plan) {
+    // A restart is due but its waker is gone (the machine rebooted, say): start one, and it
+    // resumes right away.
+    const st = readState();
+    if (st.phase !== "watching" && Date.parse(st.resumeAt) < now && !(st.waker?.pid && alive(st.waker.pid))) {
+      writeState({ ...st, waker: armWaker({ ...st, waker: null }) });
+    }
+    return null;
+  }
   const file = plan.subagent ? null : ensureSkeleton(input, plan.resumeAt, now);
   for (const [k, v] of Object.entries(notified)) if (Date.parse(v) < now - 24 * 3600_000) delete notified[k];
   notified[plan.key] = iso(plan.resumeAt);

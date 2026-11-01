@@ -227,6 +227,18 @@ test("the hook end to end: one note per session, a waker started, and the off sw
     assert.match(cli(["hook", "on"], env), /hook: on/);
     assert.equal(hook({ ...input, session_id: "55556666-cccc" }, { USAGE_HANDOFF_HOOK: "off" }), "");
     assert.match(hook({ ...input, session_id: "77778888-dddd" }), /Wrap up/);
+
+    // After a reboot: the reset has passed and the waker is gone. The next hook call starts one.
+    const before = JSON.parse(cli(["status"], env)).waker.pid;
+    process.kill(before);
+    writeFileSync(fixture, JSON.stringify(usage(3)));
+    rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+    const st = JSON.parse(readFileSync(path.join(HOME, "state.json"), "utf8"));
+    writeFileSync(path.join(HOME, "state.json"), JSON.stringify({ ...st, resumeAt: at(Date.now() - MIN) }));
+    assert.equal(hook({ ...input, session_id: "9999aaaa-eeee" }), "");
+    const after = JSON.parse(cli(["status"], env)).waker;
+    assert.notEqual(after.pid, before);
+    assert.equal(after.alive, true);
   } finally {
     const pid = JSON.parse(cli(["status"], env)).waker?.pid;
     if (pid) try { process.kill(pid); } catch {}

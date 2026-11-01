@@ -19,6 +19,8 @@ subscription with a 5-hour usage window.
    still open are messaged to resume; a closed one reopens with `claude --resume <its id>`, so it
    comes back with its whole conversation, even if it ran out before writing anything. `launch`
    won't reopen a session that is still open.
+   If the machine rebooted while waiting, the waker is gone; the first hook call after the reset,
+   in any session, starts a new one, which resumes straight away.
 5. Lee doesn't want this on one machine, so they type `/usage-handoff off`. The hook stays
    silent in every session until `/usage-handoff on`. `USAGE_HANDOFF_HOOK=off` does the same for
    one environment.
