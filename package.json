@@ -1,0 +1,16 @@
+{
+  "name": "claude-power-tools",
+  "version": "0.6.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Skills and hooks for running several Claude Code sessions on one repo.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "install-skills": "node scripts/install.mjs",
+    "sync-shared": "node scripts/sync-shared.mjs",
+    "eval": "node scripts/eval.mjs",
+    "vendor:verify": "node scripts/vendor.mjs verify"
+  }
+}

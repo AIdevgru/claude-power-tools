@@ -1,0 +1,171 @@
+# Changelog
+
+All notable changes to claude-power-tools. Versions follow [semver](https://semver.org/). The
+version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plugin.json`, which
+`npm test` keeps equal.
+
+## 0.6.0 (2026-10-31)
+
+Upgrading from 0.5? See "Upgrading from 0.5" in the README. The old `/update` can't follow the
+new folder layout, so it takes one manual step.
+
+### Breaking
+
+- **The single `claude-power-tools` plugin is now three plugins** in the `aidevgru` marketplace.
+  Each registers only its own hooks.
+
+  | Plugin | Contents | Skill names |
+  |---|---|---|
+  | `power-tools` | fleet, PR and delivery skills, git-guard, `/update` | `/power-tools:<skill>` |
+  | `power-tools-ui` | ux-mockup, ui-critique-loop, ui-finalize, Impeccable and its agents | `/power-tools-ui:<skill>` |
+  | `power-tools-projects` | new-project, project, deploy | `/power-tools-projects:<skill>` |
+
+- **The marketplace renames `claude-power-tools` to `power-tools`.** This moves only the enabled
+  setting, not the install. The 0.6 `/update` installs `power-tools` itself and lists the other
+  two plugins.
+- **graphify is no longer in any plugin.** It lives in `extras/graphify` and is installer-only
+  (`--with graphify`).
+- **The installer's default is now the core group.** Add groups with `--with ui,projects,graphify`,
+  or use `--all` for core, ui and projects. `--skills` and `--with <skill>` still work.
+- **Skills moved** from `skills/<name>` to `plugins/<plugin>/skills/<name>`. The installer and
+  `/update` re-link every recorded skill of a `--link` install and report it.
+
+
+### Added
+
+- `LICENSE` (Apache-2.0) and `NOTICE`. The bundled Impeccable and graphify keep their own
+  licenses (see `THIRD_PARTY.md`).
+- `CONTRIBUTING.md`, this changelog, and the release-readiness plan in
+  `docs/plans/2026-10-31-release-readiness.md`.
+- Trigger evals for `ticket-to-pr`, `ticket-triage` and `ui-finalize`. Evals now live in each
+  plugin, and `npm run eval` runs `claude plugin eval` once per plugin.
+- `scripts/layout.mjs`: the one map of which skill lives in which plugin. The installer, the
+  scripts and the tests all read it.
+- README: "Start here" and "Top commands" with examples. `npm test` checks that every command it
+  shows names a real skill and switch.
+
+### Changed
+
+- **`ship-plan` is folded into `implement-to-pr`.**
+  - `/implement-to-pr <plan> --review-plan --merge` does what `/ship-plan` did. `--review-plan`
+    reviews and improves the plan against the code, then writes an implementation plan to
+    `plans-dir`.
+  - `/ship-plan` still works as a deprecated shim that forwards there. It will be removed in 0.7.0.
+- **Merging is opt-in in every remaining pipeline.**
+  - `implement-to-pr` merges only with `--merge`.
+  - `finish-pr` never merges.
+  - `ticket-to-pr` asks you.
+
+  The deprecated `/ship-plan` shim keeps its old behavior and still merges unless you pass
+  `--no-merge`.
+- **One UI gate, defined once in `delivery-rules.md`.** It runs when a PR touches UI:
+  `ui-critique-loop --score N` on each touched surface, then the UX and Design persona review.
+  - `implement-to-pr`, `finish-pr` and `ticket-to-pr` all use it, and `--no-ui` skips it.
+  - Overdrive is no longer part of any automatic pipeline. It stays in `ui-finalize`, where you
+    pick the direction, and in `ux-mockup`, which picks it itself.
+- **Ticket tracking moves into the shared delivery rules.** With a configured tracker, every
+  pipeline moves the ticket through In Progress, In Review and Done.
+- **Flags use double dashes:** `--score`, `--rating`, `--no-overdrive`. The single-dash forms
+  still work until 0.7.0.
+- **`ui-critique-loop` and `ui-finalize` are rewritten in plain language with the same rules.**
+  You can now invoke them directly (`user-invocable`), and they have argument hints.
+- **`fleet-status` reads each session's status file first.** It messages only sessions whose
+  line is missing or over 15 minutes old, so busy sessions aren't interrupted.
+- **`fleet-manager` loads less by default.** Its auto-mode threat levels and debounce details
+  moved to `reference/auto-mode.md` and `reference/debounce.md`.
+- **Every first-party skill description is 300 characters or less**, so the skill listing costs
+  less context in every session. `npm test` enforces the limit.
+- The README is now a first-run guide. Reference material moved to `docs/hooks.md`,
+  `docs/installer.md` and `docs/development.md`.
+
+### Fixed
+
+- `/update` reads the version from `package.json`, and every plugin's `plugin.json` must match
+  it (`npm test` checks).
+- `/update` offers new skills only in the installer groups an install has, which the manifest now
+  records (older manifests get them from their skills). A core install isn't offered the ui,
+  projects or graphify skills, and `/update --all` never adds graphify unless it is installed.
+- A plugin `/update` only updates our plugins installed at user scope or in the current project.
+  It installs nothing except `power-tools` when migrating from the 0.5 `claude-power-tools`
+  record, and only then names the plugins that aren't installed.
+- Only a `--link` installer run re-links stale skill links. A copy run (including a copy-mode
+  `/update` from its temporary download) replaces a selected stale link with a copy, backed up,
+  so the manifest's mode matches what is on disk.
+- `npm run eval` starts `claude` without a shell where it can, so arguments with spaces survive
+  on Windows.
+- `/update` and the hook doctor no longer mistake a linked clone's `plugins/` folder for a plugin
+  install.
+- The git-guard tests no longer depend on the checkout that runs them. A `main` checkout with
+  other worktrees made one case fail with `commit-on-main`.
+
+## 0.5.0 (2026-10-28)
+
+### Added
+
+- Hook doctor. Every hook script answers `--self-test`, and a `SessionStart` doctor (also run by
+  `/update`) names any hook that is installed but not running.
+- git-guard merge gate (opt-in). `gh pr merge` runs only after the owner writes
+  `approve merge #N` as the first line of a message and every check on #N is green.
+  - Each approval is bound to the repo and to the PR's head commit.
+  - `--admin` is always refused.
+- `/pr-dashboard` messages only sessions whose status line is over 15 minutes old. Delivery
+  pipelines rewrite their status line when their PR changes.
+- CI runs `npm test`, the vendor check and the shared-file check on Linux and Windows.
+- `docs/windows.md` covers the PowerShell 5.1 traps.
+
+### Fixed
+
+- The git-guard ledger keeps real paths, so Windows 8.3 short names match git's long names.
+- Fixes from the code review of the merge gate, the doctor and the dashboard.
+
+## 0.4.1 (2026-10-27)
+
+### Changed
+
+- Bundles graphify 0.9.97.
+
+## 0.4.0 (2026-10-27)
+
+### Added
+
+- The git-guard hook blocks:
+  - `--no-verify` and force-push
+  - commits on a shared `main`
+  - checkout, stash or pull over another session's dirty files
+  - deletes through junctions
+- `/project`: a registry of project folders and stages, with a session-start resume hint.
+- `/new-project`: empty folder to a running app (Tauri 2 or web), with an optional Docker and
+  Postgres setup, VISION.md, docs, a mockup and `/implement-to-pr`.
+- `/deploy`: a splash page on GitHub Pages and the app via GitHub Actions.
+- `/update`: a dry run by default; `--force` applies.
+- Shared `reference/delivery-rules.md` for the delivery pipelines.
+- Trigger evals (`npm run eval`).
+
+### Fixed
+
+- Scripts detect a direct run by its real path. Before this, every hook did nothing in a `--link`
+  install.
+
+## 0.3.0 (2026-10-26)
+
+### Changed
+
+- The UI skills run every design step as a real `/impeccable <command> <target>` Skill call.
+
+## 0.2.0 (2026-10-26)
+
+### Added
+
+- Bundles Impeccable 4.8.0 and graphify 0.9.96 unmodified. They are pinned by commit and sha256
+  in `vendor.lock.json`.
+
+## 0.1.0 (2026-10-26)
+
+### Added
+
+- The first fifteen skills:
+  - fleet-manager, fleet-status, pr-dashboard, request-inbox
+  - ship-plan, implement-to-pr, finish-pr, combine-prs, drain-pr-queue
+  - issues-to-plan, ticket-triage, ticket-to-pr
+  - ux-mockup, ui-critique-loop, ui-finalize
+- Their hooks, an installer and a plugin manifest.

@@ -1,0 +1,6 @@
+# Requests and responses are local to the main checkout; only the inbox's own
+# docs are tracked.
+*
+!.gitignore
+!README.md
+!TEMPLATE.md

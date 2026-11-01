@@ -1,0 +1,32 @@
+{
+  "$comment": "Third-party skills shipped unmodified. Update with `node scripts/vendor.mjs sync <name> --ref <tag>`; never edit the copied files by hand (`npm test` checks them against vendor.lock.json). Each `files` entry maps a path in this repo to a file or folder in the upstream repo.",
+  "impeccable": {
+    "repo": "https://github.com/pbakaus/impeccable",
+    "ref": "skill-v4.8.0",
+    "license": "Apache-2.0",
+    "files": {
+      "plugins/power-tools-ui/skills/impeccable": "plugin/skills/impeccable",
+      "plugins/power-tools-ui/skills/impeccable/LICENSE": "LICENSE",
+      "plugins/power-tools-ui/skills/impeccable/NOTICE.md": "NOTICE.md",
+      "plugins/power-tools-ui/agents/impeccable-asset-producer.md": "plugin/agents/impeccable-asset-producer.md",
+      "plugins/power-tools-ui/agents/impeccable-documenter.md": "plugin/agents/impeccable-documenter.md",
+      "plugins/power-tools-ui/agents/impeccable-finish-reviewer.md": "plugin/agents/impeccable-finish-reviewer.md",
+      "plugins/power-tools-ui/agents/impeccable-manual-edit-applier.md": "plugin/agents/impeccable-manual-edit-applier.md"
+    }
+  },
+  "graphify": {
+    "repo": "https://github.com/Graphify-Labs/graphify",
+    "ref": "v0.9.97",
+    "license": "Apache-2.0 (earlier portions MIT)",
+    "files": {
+      "extras/graphify/SKILL.md": "graphify/skill.md",
+      "extras/graphify/references": "graphify/skills/claude/references",
+      "extras/graphify/LICENSE": "LICENSE",
+      "extras/graphify/LICENSE-MIT": "LICENSE-MIT",
+      "extras/graphify/NOTICE": "NOTICE"
+    },
+    "generated": {
+      "extras/graphify/.graphify_version": "{version}"
+    }
+  }
+}

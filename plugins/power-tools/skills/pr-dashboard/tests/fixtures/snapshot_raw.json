@@ -1,0 +1,1105 @@
+{
+ "now": "2026-10-16T08:19:02.028738+00:00",
+ "repo": "acme/widgets",
+ "workflow": "ci-release.yml",
+ "prs": [
+  {
+   "number": 77,
+   "title": "Tauri 2 shell for web, macOS and Android with Docker isolation [widgets-36]",
+   "headRefName": "docs/tauri-client-plan",
+   "headRefOid": "76f42ffb2564fece60b4a62c4c72119505e54b39",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-19T13:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "CONFLICTING",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/77"
+  },
+  {
+   "number": 80,
+   "title": "/api/v1 foundation and native token auth for Tauri clients",
+   "headRefName": "feat/api-v1-foundation",
+   "headRefOid": "b23ab2aa995b756487661e457ee3c965e5cae18c",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-19T16:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "CONFLICTING",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/80"
+  },
+  {
+   "number": 81,
+   "title": "Vite SPA, native keychain refresh and Next.js retirement plan",
+   "headRefName": "feat/client-spa",
+   "headRefOid": "74ea116800000000000000000000000000000000",
+   "isDraft": true,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-19T17:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/81"
+  },
+  {
+   "number": 82,
+   "title": "Mobile Application \u2014 Tauri 2 shell, /api/v1 native auth and SPA [widgets-36]",
+   "headRefName": "feat/mobile-application",
+   "headRefOid": "dfb5e4c300000000000000000000000000000000",
+   "isDraft": true,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-19T18:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/82"
+  },
+  {
+   "number": 93,
+   "title": "Complete cloud disaster recovery proposal and handoff",
+   "headRefName": "docs/cloud-dr-plan",
+   "headRefOid": "a05c11bbb40f2bd61fcb9c720fc04588727b93a6",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-20T05:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/93"
+  },
+  {
+   "number": 109,
+   "title": "Add widget platform vision (product line names)",
+   "headRefName": "docs/platform-vision",
+   "headRefOid": "94bd6abd00000000000000000000000000000000",
+   "isDraft": true,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-20T21:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/109"
+  },
+  {
+   "number": 110,
+   "title": "Widget platform implementation plan (draft)",
+   "headRefName": "docs/platform-implementation-plan",
+   "headRefOid": "7b38f91600000000000000000000000000000000",
+   "isDraft": true,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-20T22:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/110"
+  },
+  {
+   "number": 132,
+   "title": "Add an Undo window before direct text replies send [widgets-c7]",
+   "headRefName": "feat/reply-undo-send",
+   "headRefOid": "ff4f2b8bc87e5a5537be33578dc40be667f5d2eb",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-21T20:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "CONFLICTING",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/132"
+  },
+  {
+   "number": 133,
+   "title": "Poll the settled fix-queue selector height after navigating",
+   "headRefName": "fix/release-r4",
+   "headRefOid": "a9cbd28b818faba5bc6a00a32a536756edc3cf97",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-21T21:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/133"
+  },
+  {
+   "number": 134,
+   "title": "Structural follow-up for the inbox design gate (#108/#129)",
+   "headRefName": "docs/conversations-structural-follow-up",
+   "headRefOid": "b7677e6d00000000000000000000000000000000",
+   "isDraft": true,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-21T22:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/134"
+  },
+  {
+   "number": 135,
+   "title": "Make the request proxy run: move it to src/ and fix its matcher",
+   "headRefName": "fix/proxy-in-src",
+   "headRefOid": "88ca183398c3e48a9dff30f4900e0787a3bf74be",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-21T23:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "CONFLICTING",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/135"
+  },
+  {
+   "number": 139,
+   "title": "Combined: coverage gate + E2E coverage, test sense reviews, UTC and prototype-key fixes, runner tool",
+   "headRefName": "feat/combined-ci-test-hygiene",
+   "headRefOid": "572df9d300000000000000000000000000000000",
+   "isDraft": false,
+   "body": "## Summary\nCombined.\n\n## Source PRs\n| PR | What |\n|---|---|\n| #122 | source |\n| #128 | source |\n| #136 | source |\n| #130 | source |\n| #127 | source |\n| #116 | source |\n| #126 | source |\n\n## Test plan\n- ci\n",
+   "labels": [],
+   "createdAt": "2026-09-22T03:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "CONFLICTING",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/139"
+  },
+  {
+   "number": 140,
+   "title": "Accept formatted bulk-csv exports [widgets-b4]",
+   "headRefName": "feat/bulk-csv-import",
+   "headRefOid": "7a3240f200000000000000000000000000000000",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-22T04:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "CONFLICTING",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/140"
+  },
+  {
+   "number": 142,
+   "title": "Keep Active and Pending members active on roster import [widgets-b4]",
+   "headRefName": "fix/roster-status-status",
+   "headRefOid": "8263f7ad6052665f252501d377443ba696a11767",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-22T06:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/142"
+  },
+  {
+   "number": 143,
+   "title": "Combined: reply Undo window, bulk-csv + status import fixes, proxy fix, fix-queue test",
+   "headRefName": "feat/combined-oct16-no-email",
+   "headRefOid": "fbd8e94a00000000000000000000000000000000",
+   "isDraft": false,
+   "body": "## Summary\nCombined.\n\n## Source PRs\n| PR | What |\n|---|---|\n| #133 | source |\n| #135 | source |\n| #140 | source |\n| #142 | source |\n| #132 | source |\n\n## Test plan\n- ci\n",
+   "labels": [],
+   "createdAt": "2026-09-22T07:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/143"
+  },
+  {
+   "number": 144,
+   "title": "Scope the import duplicate check and keep restore controls visible on short screens (#129 follow-up)",
+   "headRefName": "fix/inbox-129-review-followup",
+   "headRefOid": "aa4c435c00000000000000000000000000000000",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-22T08:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/144"
+  },
+  {
+   "number": 145,
+   "title": "Ninth review round follow-up to #138",
+   "headRefName": "fix/email-channel-review-round-9",
+   "headRefOid": "fefb4ec400000000000000000000000000000000",
+   "isDraft": false,
+   "body": "",
+   "labels": [],
+   "createdAt": "2026-09-22T09:19:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "mergeable": "MERGEABLE",
+   "reviewDecision": "",
+   "url": "https://github.com/acme/widgets/pull/145"
+  }
+ ],
+ "ci_runs": [
+  {
+   "conclusion": "",
+   "createdAt": "2026-10-16T07:25:33Z",
+   "databaseId": 38867130136,
+   "displayTitle": "main CI d5ce95ad9f4d9525eff740969f7bbae1f611cd7e",
+   "event": "push",
+   "headBranch": "main",
+   "headSha": "d5ce95ad9f4d9525eff740969f7bbae1f611cd7e",
+   "startedAt": "2026-10-16T07:25:33Z",
+   "status": "in_progress",
+   "updatedAt": "2026-10-16T07:48:28Z",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38800000000,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "0000000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "event": "push",
+   "createdAt": "2026-10-16T06:46:02Z",
+   "startedAt": "2026-10-16T06:46:02Z",
+   "updatedAt": "2026-10-16T07:19:02Z",
+   "displayTitle": "main CI 0",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38859477517,
+   "status": "completed",
+   "conclusion": "failure",
+   "headBranch": "feat/reply-undo-send",
+   "headSha": "ff4f2b8bc87e5a5537be33578dc40be667f5d2eb",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-16T06:09:02Z",
+   "startedAt": "2026-10-16T06:09:02Z",
+   "updatedAt": "2026-10-16T06:46:02Z",
+   "displayTitle": "PR #132 CI ff4f2b8bc87e5a5537be33578dc40be667f5d2eb",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38800000001,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "0000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "event": "push",
+   "createdAt": "2026-10-16T05:46:02Z",
+   "startedAt": "2026-10-16T05:46:02Z",
+   "updatedAt": "2026-10-16T06:19:02Z",
+   "displayTitle": "main CI 1",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38800000002,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "0000002aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "event": "push",
+   "createdAt": "2026-10-16T04:46:02Z",
+   "startedAt": "2026-10-16T04:46:02Z",
+   "updatedAt": "2026-10-16T05:19:02Z",
+   "displayTitle": "main CI 2",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38800000003,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "0000003aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "event": "push",
+   "createdAt": "2026-10-16T03:46:02Z",
+   "startedAt": "2026-10-16T03:46:02Z",
+   "updatedAt": "2026-10-16T04:19:02Z",
+   "displayTitle": "main CI 3",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38845105084,
+   "status": "completed",
+   "conclusion": "failure",
+   "headBranch": "fix/roster-status-status",
+   "headSha": "8263f7ad6052665f252501d377443ba696a11767",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-16T03:22:02Z",
+   "startedAt": "2026-10-16T03:22:02Z",
+   "updatedAt": "2026-10-16T04:01:02Z",
+   "displayTitle": "PR #142 CI 8263f7ad6052665f252501d377443ba696a11767",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38800000004,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "0000004aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "event": "push",
+   "createdAt": "2026-10-16T02:46:02Z",
+   "startedAt": "2026-10-16T02:46:02Z",
+   "updatedAt": "2026-10-16T03:19:02Z",
+   "displayTitle": "main CI 4",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38800000005,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "0000005aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "event": "push",
+   "createdAt": "2026-10-16T01:46:02Z",
+   "startedAt": "2026-10-16T01:46:02Z",
+   "updatedAt": "2026-10-16T02:19:02Z",
+   "displayTitle": "main CI 5",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38800000006,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "0000006aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "event": "push",
+   "createdAt": "2026-10-16T00:46:02Z",
+   "startedAt": "2026-10-16T00:46:02Z",
+   "updatedAt": "2026-10-16T01:19:02Z",
+   "displayTitle": "main CI 6",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38821597838,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "fix/proxy-in-src",
+   "headSha": "88ca183398c3e48a9dff30f4900e0787a3bf74be",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-15T23:08:02Z",
+   "startedAt": "2026-10-15T23:08:02Z",
+   "updatedAt": "2026-10-15T23:45:02Z",
+   "displayTitle": "PR #135 CI 88ca183398c3e48a9dff30f4900e0787a3bf74be",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38803607680,
+   "status": "completed",
+   "conclusion": "cancelled",
+   "headBranch": "fix/release-r4",
+   "headSha": "a9cbd28b818faba5bc6a00a32a536756edc3cf97",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-15T20:40:02Z",
+   "startedAt": "2026-10-15T20:40:02Z",
+   "updatedAt": "2026-10-15T20:45:02Z",
+   "displayTitle": "PR #133 CI a9cbd28b818faba5bc6a00a32a536756edc3cf97",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38170413400,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "docs/cloud-dr-plan",
+   "headSha": "a05c11bbb40f2bd61fcb9c720fc04588727b93a6",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-11T20:02:02Z",
+   "startedAt": "2026-10-11T20:02:02Z",
+   "updatedAt": "2026-10-11T20:49:02Z",
+   "displayTitle": "PR #93 CI a05c11bbb40f2bd61fcb9c720fc04588727b93a6",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38151328825,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "feat/client-spa",
+   "headSha": "22a624e8f14920cfdb37a4ec8854f6fd662ee4aa",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-11T15:28:02Z",
+   "startedAt": "2026-10-11T15:28:02Z",
+   "updatedAt": "2026-10-11T18:16:02Z",
+   "displayTitle": "PR #81 CI 22a624e8f14920cfdb37a4ec8854f6fd662ee4aa",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38151337298,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "feat/mobile-application",
+   "headSha": "da2d9832f06536ab51a949646c76aa7c048fd241",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-11T15:28:02Z",
+   "startedAt": "2026-10-11T15:28:02Z",
+   "updatedAt": "2026-10-11T18:16:02Z",
+   "displayTitle": "PR #82 CI da2d9832f06536ab51a949646c76aa7c048fd241",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38151110898,
+   "status": "completed",
+   "conclusion": "failure",
+   "headBranch": "docs/tauri-client-plan",
+   "headSha": "76f42ffb2564fece60b4a62c4c72119505e54b39",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-11T15:25:02Z",
+   "startedAt": "2026-10-11T15:25:02Z",
+   "updatedAt": "2026-10-11T18:33:02Z",
+   "displayTitle": "PR #77 CI 76f42ffb2564fece60b4a62c4c72119505e54b39",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38151026673,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "feat/api-v1-foundation",
+   "headSha": "b23ab2aa995b756487661e457ee3c965e5cae18c",
+   "event": "workflow_dispatch",
+   "createdAt": "2026-10-11T15:24:02Z",
+   "startedAt": "2026-10-11T15:24:02Z",
+   "updatedAt": "2026-10-11T18:04:02Z",
+   "displayTitle": "PR #80 CI b23ab2aa995b756487661e457ee3c965e5cae18c",
+   "workflowName": "CI"
+  }
+ ],
+ "recent": [
+  {
+   "conclusion": "",
+   "createdAt": "2026-10-16T07:25:33Z",
+   "databaseId": 38867130136,
+   "displayTitle": "main CI d5ce95ad9f4d9525eff740969f7bbae1f611cd7e",
+   "event": "push",
+   "headBranch": "main",
+   "headSha": "d5ce95ad9f4d9525eff740969f7bbae1f611cd7e",
+   "startedAt": "2026-10-16T07:25:33Z",
+   "status": "in_progress",
+   "updatedAt": "2026-10-16T07:48:28Z",
+   "workflowName": "CI"
+  },
+  {
+   "databaseId": 38867999999,
+   "status": "completed",
+   "conclusion": "success",
+   "headBranch": "main",
+   "headSha": "d5ce95ad9f4d9525eff740969f7bbae1f611cd7e",
+   "event": "schedule",
+   "createdAt": "2026-10-16T08:17:02Z",
+   "startedAt": "2026-10-16T08:17:02Z",
+   "updatedAt": "2026-10-16T08:18:02Z",
+   "displayTitle": "CI PR queue",
+   "workflowName": "CI PR queue"
+  }
+ ],
+ "jobs": {
+  "38151110898": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Required CI gate",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38151026673": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38151328825": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38151337298": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38170413400": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38859477517": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "E2E shard 5",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "E2E shard 6",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 7",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 8",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Required CI gate",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Security audit",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38803607680": [
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "cancelled"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "cancelled"
+   },
+   {
+    "name": "Required CI gate",
+    "status": "completed",
+    "conclusion": "cancelled"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Security audit",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38821597838": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 5",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 6",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 7",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 8",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Security audit",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Docs check",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38845105084": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 5",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "E2E shard 6",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 7",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 8",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Required CI gate",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Security audit",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ],
+  "38867130136": [
+   {
+    "name": "E2E shard 1",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 2",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 3",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "E2E shard 4",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 5",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "E2E shard 6",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "E2E shard 7",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "E2E shard 8",
+    "status": "completed",
+    "conclusion": "failure"
+   },
+   {
+    "name": "Quality and integration checks",
+    "status": "in_progress",
+    "conclusion": ""
+   },
+   {
+    "name": "Build verified Next.js output",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Lint and typecheck",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Unit tests",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Prisma migrate check",
+    "status": "completed",
+    "conclusion": "success"
+   },
+   {
+    "name": "Security audit",
+    "status": "completed",
+    "conclusion": "success"
+   }
+  ]
+ },
+ "closed": {
+  "116": {
+   "state": "CLOSED",
+   "title": "CI: coverage ratchet and in-repo coverage report"
+  },
+  "122": {
+   "state": "CLOSED",
+   "title": "fix(ci-runners): stop the download cleanup trap aborting the install"
+  },
+  "126": {
+   "state": "CLOSED",
+   "title": "CI: nightly and on-demand Playwright E2E coverage with a combined unit + E2E report"
+  },
+  "127": {
+   "state": "CLOSED",
+   "title": "test: make Vitest assertions check what their names claim"
+  },
+  "128": {
+   "state": "CLOSED",
+   "title": "fix: ignore inherited object keys in two label lookups"
+  },
+  "130": {
+   "state": "CLOSED",
+   "title": "test(e2e): make every spec assert what its name claims; share session/axe/sign-in setup"
+  },
+  "136": {
+   "state": "CLOSED",
+   "title": "Compute calendar day and month boundaries in UTC"
+  }
+ },
+ "qlabel": "clear",
+ "codex": []
+}

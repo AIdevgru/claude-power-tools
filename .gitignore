@@ -1,0 +1,8 @@
+node_modules/
+__pycache__/
+*.pyc
+.claude-inbox/*
+!.claude-inbox/.gitignore
+!.claude-inbox/README.md
+!.claude-inbox/TEMPLATE.md
+plugins/*/evals/results/

@@ -1,0 +1,16 @@
+{
+  "description": "power-tools-projects hooks: at session start, show where the current /new-project project stands and its next step.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/project/scripts/projects.mjs\" --hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

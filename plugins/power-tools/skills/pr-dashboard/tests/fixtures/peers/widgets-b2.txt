@@ -1,0 +1,1 @@
+widgets-b2 | #109 #110 #134 #82 (#81 superseded) | docs drafts ready; #82 moved to widgets.example; batch merge queued | waiting on #139 (ee, needs main merged in) and #143 landing | next push none until slate lands | ask owner: R2.1 naming in #110 (extend ItemCategory or new table) | ETA ~3h after #139+#143 merge

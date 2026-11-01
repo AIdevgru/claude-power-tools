@@ -1,0 +1,26 @@
+{
+  "name": "aidevgru",
+  "owner": { "name": "aidevgru" },
+  "description": "claude-power-tools: skills and hooks for running several Claude Code sessions on one repo, plus score-gated UI work and a new-project-to-deploy workflow.",
+  "renames": { "claude-power-tools": "power-tools" },
+  "plugins": [
+    {
+      "name": "power-tools",
+      "source": "./plugins/power-tools",
+      "description": "Fleet manager, status board, PR dashboard, request inbox, task/ticket/plan-to-PR pipelines, PR combining and the git-guard hook for parallel Claude Code sessions.",
+      "category": "productivity"
+    },
+    {
+      "name": "power-tools-ui",
+      "source": "./plugins/power-tools-ui",
+      "description": "UX mockups, a score-gated UI critique loop and a release-quality finish pass, with the bundled Impeccable design skill.",
+      "category": "design"
+    },
+    {
+      "name": "power-tools-projects",
+      "source": "./plugins/power-tools-projects",
+      "description": "New project to deployed app: scaffold, vision, plan, mockup, build and deploy, plus a registry of your project folders.",
+      "category": "productivity"
+    }
+  ]
+}

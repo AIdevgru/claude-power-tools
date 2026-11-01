@@ -1,0 +1,17 @@
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# OS and editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.swp
+.vscode/*
+!.vscode/extensions.json
+# Logs
+*.log
+logs/

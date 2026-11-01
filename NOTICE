@@ -1,0 +1,13 @@
+claude-power-tools
+Copyright 2026 aidevgru and contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It bundles third-party software under its own licenses, listed in THIRD_PARTY.md:
+- Impeccable (plugins/power-tools-ui/skills/impeccable,
+  plugins/power-tools-ui/agents/impeccable-*.md), Apache-2.0, by Paul Bakaus.
+  See plugins/power-tools-ui/skills/impeccable/LICENSE and
+  plugins/power-tools-ui/skills/impeccable/NOTICE.md.
+- graphify (extras/graphify), Apache-2.0 with earlier portions under MIT, by Safi Shamsi
+  and contributors. See extras/graphify/LICENSE, extras/graphify/LICENSE-MIT and
+  extras/graphify/NOTICE.

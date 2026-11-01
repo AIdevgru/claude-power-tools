@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.png binary
+# cmd.exe parses batch files by byte offset; an LF-only .cmd breaks call/goto.
+*.cmd text eol=crlf
