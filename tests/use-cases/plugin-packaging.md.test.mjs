@@ -29,7 +29,7 @@ const firstParty = (file) => !VENDORED.has(rel(file));
 
 // The split the release plan settled on.
 const EXPECTED = {
-  "power-tools": ["combine-prs", "drain-pr-queue", "finish-pr", "fleet-manager", "fleet-status", "git-guard", "implement-to-pr", "issues-to-plan", "pr-dashboard", "request-inbox", "ship-plan", "ticket-to-pr", "ticket-triage", "update"],
+  "power-tools": ["combine-prs", "drain-pr-queue", "finish-pr", "fleet-manager", "fleet-status", "git-guard", "implement-to-pr", "issues-to-plan", "pr-dashboard", "request-inbox", "ship-plan", "ticket-to-pr", "ticket-triage", "update", "usage-handoff"],
   "power-tools-ui": ["impeccable", "ui-critique-loop", "ui-finalize", "ux-mockup"],
   "power-tools-projects": ["deploy", "new-project", "project"],
 };
@@ -80,7 +80,7 @@ test("each plugin's hooks run scripts inside that plugin, and only power-tools-u
       }
     }
   }
-  assert.deepEqual([...new Set(scripts["power-tools"])].sort(), ["fleet-manager", "git-guard", "request-inbox", "update"]);
+  assert.deepEqual([...new Set(scripts["power-tools"])].sort(), ["fleet-manager", "git-guard", "request-inbox", "update", "usage-handoff"]);
   assert.deepEqual(scripts["power-tools-ui"], []);
   assert.deepEqual(scripts["power-tools-projects"], ["project"]);
   assert.ok(!existsSync(path.join(pluginDir("power-tools-ui"), "hooks", "hooks.json")), "power-tools-ui registers no hooks");

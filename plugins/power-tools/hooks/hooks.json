@@ -1,5 +1,5 @@
 {
-  "description": "power-tools hooks: git-guard (and its merge approvals), the /fleet-manager debounce, and the session-start checks for the request inbox and hook health.",
+  "description": "power-tools hooks: git-guard (and its merge approvals), the /fleet-manager debounce, the usage-handoff check, and the session-start checks for the request inbox and hook health.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -17,6 +17,15 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/git-guard/scripts/git-guard.mjs\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/usage-handoff/scripts/usage.mjs\" --hook",
             "timeout": 15
           }
         ]
@@ -53,6 +62,15 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/git-guard/scripts/git-guard.mjs\"",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/usage-handoff/scripts/usage.mjs\" --hook",
+            "timeout": 15
           }
         ]
       }

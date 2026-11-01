@@ -27,7 +27,7 @@ The skills come in the same groups as the three plugins, plus graphify on its ow
 
 | Group | Same as plugin | Skills |
 |---|---|---|
-| `core` (default) | `power-tools` | fleet-manager, fleet-status, pr-dashboard, request-inbox, implement-to-pr, finish-pr, ticket-to-pr, ticket-triage, issues-to-plan, combine-prs, drain-pr-queue, git-guard, update, ship-plan |
+| `core` (default) | `power-tools` | fleet-manager, fleet-status, pr-dashboard, request-inbox, usage-handoff, implement-to-pr, finish-pr, ticket-to-pr, ticket-triage, issues-to-plan, combine-prs, drain-pr-queue, git-guard, update, ship-plan |
 | `ui` | `power-tools-ui` | ux-mockup, ui-critique-loop, ui-finalize, impeccable (and its 4 subagents) |
 | `projects` | `power-tools-projects` | new-project, project, deploy |
 | `graphify` | none | graphify |
