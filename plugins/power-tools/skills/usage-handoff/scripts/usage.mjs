@@ -311,8 +311,13 @@ function onPath(name) {
 function launch(cwd, prompt, dryRun, resumeId = null) {
   if (!cwd || !existsSync(cwd)) throw new Error(`folder not found: ${cwd}`);
   const c = launchCommand({ cwd, prompt, resumeId });
-  if (!c) throw new Error(`no terminal found; run this yourself: cd "${cwd}" && claude ${resumeId ? `--resume ${resumeId} ` : ""}"${safe(prompt)}"`);
-  if (dryRun || process.env.USAGE_HANDOFF_DRY_LAUNCH) return c; // the env var is for tests
+  const dry = dryRun || process.env.USAGE_HANDOFF_DRY_LAUNCH; // the env var is for tests
+  if (!c) {
+    const manual = `cd "${cwd}" && claude ${resumeId ? `--resume ${resumeId} ` : ""}"${safe(prompt)}"`;
+    if (dry) return { cmd: null, args: [], manual };
+    throw new Error(`no terminal found; run this yourself: ${manual}`);
+  }
+  if (dry) return c;
   spawn(c.cmd, c.args, { detached: true, stdio: "ignore", windowsVerbatimArguments: !!c.verbatim }).unref();
   return c;
 }
@@ -368,7 +373,7 @@ async function wake() {
     }
     try {
       const c = launch(state.cwd || homedir(), RESUMER_PROMPT, false);
-      log(`waker ${process.pid}: started a resume session in ${state.cwd}: ${c.cmd} ${c.args.join(" ")}`);
+      log(`waker ${process.pid}: started a resume session in ${state.cwd}: ${c.cmd ? `${c.cmd} ${c.args.join(" ")}` : `(dry run, no terminal) ${c.manual}`}`);
     } catch (e) {
       log(`waker ${process.pid}: could not start a session: ${e.message}`);
     }
