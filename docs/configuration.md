@@ -42,6 +42,7 @@ optional. Anything the repo's own instructions say elsewhere wins over these key
 | `FLEET_MANAGER_INBOX` | fleet-manager debounce | the request inbox of the main checkout |
 | `FLEET_MANAGER_HOME` | fleet-manager ledger and debounce state | `~/.claude/fleet-manager/<owner>-<repo>/` |
 | `CLAUDE_INBOX_DIR` | request-inbox | `<main checkout>/.claude-inbox`, else `.ForClaude` |
+| `USAGE_HANDOFF_HOOK` | usage-handoff hook: `off` turns it off for that environment (`/usage-handoff off` does it for every session) | on |
 | `USAGE_HANDOFF_HOME` | usage-handoff (state, `handoffs/`, `waker.log`) | `~/.claude/usage-handoff` |
 | `USAGE_HANDOFF_CMD` | usage-handoff: a command that prints usage JSON instead of asking Anthropic's usage endpoint | — |
 | `PR_DASHBOARD_HOME` | pr-dashboard, fleet-status (session status lines in `status/`) | `~/.claude/pr-dashboard` |

@@ -80,7 +80,7 @@ test("each plugin's hooks run scripts inside that plugin, and only power-tools-u
       }
     }
   }
-  assert.deepEqual([...new Set(scripts["power-tools"])].sort(), ["fleet-manager", "git-guard", "request-inbox", "update"]);
+  assert.deepEqual([...new Set(scripts["power-tools"])].sort(), ["fleet-manager", "git-guard", "request-inbox", "update", "usage-handoff"]);
   assert.deepEqual(scripts["power-tools-ui"], []);
   assert.deepEqual(scripts["power-tools-projects"], ["project"]);
   assert.ok(!existsSync(path.join(pluginDir("power-tools-ui"), "hooks", "hooks.json")), "power-tools-ui registers no hooks");

@@ -8,11 +8,14 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Added
 
-- **`usage-handoff`**: run `/loop /usage-handoff` in one session. When a Claude usage window
-  reaches 95% (`--threshold N` changes it), it asks every session to have its subagents report,
-  save their work and write a handoff to `~/.claude/usage-handoff/handoffs/`. After the reset it
-  tells live sessions to resume from their handoff and opens a new `claude` session for each one
-  that closed. A background waker does the restart if the loop itself ran out of usage.
+- **`usage-handoff`**, with a hook that is on by default (`UserPromptSubmit`, `PostToolUse`).
+  When a Claude usage window reaches 95% (`--threshold N` changes it), each session is told once
+  to have its subagents report, save its work and fill in a handoff in
+  `~/.claude/usage-handoff/handoffs/`, which the hook creates with the session id, folder and
+  branch. Subagents are told to stop at a safe point. A background waker restarts the work after
+  the reset: open sessions are messaged, closed ones reopen with `claude --resume <id>`.
+  `/usage-handoff off` (or `USAGE_HANDOFF_HOOK=off`) turns the hook off; `/loop /usage-handoff`
+  adds a watcher session that also messages sessions without the hook.
 
 ## 0.6.0 (2026-10-31)
 

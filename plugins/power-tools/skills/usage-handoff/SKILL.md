@@ -1,9 +1,9 @@
 ---
 name: usage-handoff
-description: "Watches Claude usage limits. Near the top (95% by default) it tells every session and its subagents to write a handoff and stop, then restarts the work from those handoffs once the limit resets. Run as `/loop /usage-handoff`. Trigger on 'watch my usage' or 'hand off before the limit'."
+description: "Watches Claude usage limits (a hook, on by default). Near the top (95%) every session and subagent writes a handoff and stops; after the reset the work restarts from those handoffs. `/usage-handoff off` turns it off. Trigger on 'watch my usage' or 'hand off before the limit'."
 user-invocable: true
 disable-model-invocation: false
-argument-hint: "[check | resume | status | reset] [--threshold N]  (default: check, threshold 95)"
+argument-hint: "[check | resume | status | on | off | reset] [--threshold N]  (default: check, threshold 95)"
 allowed-tools: ListAgents, SendMessage, ToolSearch, Bash, Read, Write, ScheduleWakeup
 ---
 
@@ -11,7 +11,9 @@ allowed-tools: ListAgents, SendMessage, ToolSearch, Bash, Read, Write, ScheduleW
 
 Claude subscription usage has a 5-hour window and a weekly window. When either fills up, every session on the account stops mid-task. This skill watches the numbers, has every session (and their subagents) write a handoff while there's still room, and restarts the work from those handoffs when the window resets.
 
-Run it in ONE session with **`/loop /usage-handoff`**. Each invocation is one tick: check, act, schedule the next tick. Outside a loop, run one tick and end by suggesting `/loop /usage-handoff`.
+**It works on its own once power-tools is installed.** A hook (see "The hook") runs in every session after each prompt and tool call. At the threshold it tells that session, or that subagent, to wrap up and fill in a handoff, and it starts the background waker that restarts the work after the reset. Nobody needs to run anything.
+
+**`/loop /usage-handoff`** is optional: one session that also checks on a schedule, messages sessions that don't have the hook, and does the resume itself instead of waiting for the waker. Each invocation is one tick: check, act, schedule the next tick. Outside a loop, run one tick and report it.
 
 `USAGE` below means `node "<this skill's base directory>/scripts/usage.mjs"`. If `SendMessage` or `ScheduleWakeup` is deferred, load them in one `ToolSearch("select:SendMessage,ScheduleWakeup")` call.
 
@@ -20,8 +22,21 @@ Run it in ONE session with **`/loop /usage-handoff`**. Each invocation is one ti
 - **`check`** (default, or empty): one tick (below).
 - **`resume`**: run "Resume" now, even if no reset is due. The background waker starts a session with this argument.
 - **`status`**: print `USAGE status` as a short summary (phase, reset time, waker alive, pending handoffs). No other action.
+- **`on`** / **`off`**: `USAGE hook on` or `USAGE hook off`, then print its one-line answer. Switches the hook for every session on this machine. Only the owner can ask for this, in their own message.
 - **`reset`**: `USAGE reset`. Back to watching; existing handoff files stay.
 - **`--threshold N`**: the percentage that triggers handoffs (default 95). It's saved, so later ticks keep it.
+
+## The hook
+
+Registered by the plugin (and by the installer) for `UserPromptSubmit` and `PostToolUse`, as `USAGE --hook`. It's on by default.
+
+- **Cost:** it reads usage from a cache shared by every session: re-read every 10 minutes when usage is low, every minute within 10 points of the threshold. Otherwise it reads a small file and exits.
+- **At the threshold, once per session and once per subagent per window**, it adds a note to that conversation:
+  - A **session** is told to stop starting work, collect state from its subagents, WIP-commit, and fill in its handoff. The hook has already created the file (`<handoffDir>/<folder>-<session id>.md`) with `Status: pending`, `SessionId`, `Cwd` and `Branch` filled in. The session adds its name and the sections.
+  - A **subagent** is told to stop at a safe point and end with a report for its parent.
+- **It starts the waker**, so the restart happens even if no session is running `/usage-handoff`. Even a session that ran out before writing anything has a handoff file with its session id, so it can be reopened.
+- **Off switch:** `/usage-handoff off` (stored in `~/.claude/usage-handoff/config.json`), or `USAGE_HANDOFF_HOOK=off` in the environment. `/usage-handoff on` turns it back on.
+- It fails open: any error leaves the session alone.
 
 ## A tick
 
@@ -60,6 +75,7 @@ From usage-handoff (<this session>) on the owner's behalf: Claude usage is at <p
 4. Reply with one line: "handoff written: <path>". Then end your turn and wait. After the reset you'll get a message, or a new session will start, telling you to resume from the file.
 ```
 
+   If the hook already created a handoff file for a session, that session fills it in instead of writing a new one; the message is harmless either way.
 3. Write this session's own handoff the same way, after asking its own running subagents (if any) for their state. If watching is all it does, a short handoff is fine.
 4. `USAGE mark-handoff --resume-at <resumeAt> --session <this session> --cwd <this session's working folder>`. This records the phase and starts the **background waker**: a detached process that sleeps until the reset and then opens a new terminal running `claude` with the resume request. It's the fallback for when this loop can't run (the limit is already hit, or this session closed). Mention the waker's PID in the report.
 5. Peers' one-line replies arrive as `<cross-session-message>` turns. Count them in the next report; don't wait for them. A peer that hasn't written its file by the next tick gets no second message: it's probably already out of usage.
@@ -67,15 +83,15 @@ From usage-handoff (<this session>) on the owner's behalf: Claude usage is at <p
 ## Resume
 
 1. `USAGE claim-resume --by <this session>`. Exit code 3 means another session (or the waker's session) is already resuming: report that and stop. The claim keeps the loop and the waker from both restarting everyone.
-2. In parallel: `USAGE pending` (the handoff files still marked pending) and `ListAgents`.
-3. For each pending handoff whose `Session` is a live session in `ListAgents` (match names case-insensitively): `SendMessage` it, in one message for all of them:
+2. In parallel: `USAGE pending` and `ListAgents`. `pending` lists the handoff files still marked pending, each with `open` (its Claude Code process is still running, from the session id; `null` when the file has no id) and `canReopen` (`claude --resume` can bring the conversation back).
+3. For each pending handoff that is open, or whose `Session` matches a `ListAgents` name (case-insensitively), `SendMessage` the session, in one message for all of them. If it's open but its `Session` line was never filled in, find it in `ListAgents` by its folder; if you can't, list it on the report as open but not messaged.
 
 ```
 From usage-handoff (<this session>): Claude usage has reset. Resume from your handoff at <file>: Read it, change its Status line to "resumed by <your session name>", re-check git status in its Cwd, then carry on with its Next steps. Restart any subagent work listed under In flight.
 ```
 
    Then `USAGE mark-messaged <file> ...` for those files. If one is still pending 15 minutes later, `check` lists it in `stalePending` and the next tick launches it (step 4).
-4. For each pending handoff whose session is gone (or is in `stalePending`): `USAGE launch <file>`. It opens a new terminal in the handoff's `Cwd` running `claude` with a request to resume from the file; the new session marks the file itself. If it prints "no terminal found", put the printed command on the report for the owner.
+4. For each pending handoff whose session is closed (`open` is false or null and no `ListAgents` match), or that is in `stalePending`: `USAGE launch <file>`. It opens a new terminal in the handoff's `Cwd`. When `canReopen` is true it runs `claude --resume <session id>`, so the conversation comes back with its full history; otherwise a fresh `claude`. Either way the request is to resume from the file, and the session marks the file itself. `launch` refuses a session that is still open. Never pass `--force` on your own: two copies of one conversation fight over it. Put an open session that ignored the message on the report for the owner instead. If it prints "no terminal found", put the printed command on the report for the owner.
 5. This session's own handoff: `USAGE mark-resumed <file> --by <this session>`, then carry on with its Next steps after the report.
 6. `USAGE finish-resume`. The loop goes back to watching.
 

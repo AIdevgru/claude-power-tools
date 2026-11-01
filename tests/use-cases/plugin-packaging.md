@@ -9,7 +9,8 @@ not the UI or new-project skills competing for room in every session's skill lis
    the bundled Impeccable with its four subagents) and `power-tools-projects`
    (new project to deploy, and the project registry).
 2. She installs only `power-tools@aidevgru`. `/hooks` shows the git-guard hooks, the
-   `/fleet-manager` debounce and the request-inbox and doctor session-start checks, and
+   `/fleet-manager` debounce, the usage-handoff check and the request-inbox and doctor
+   session-start checks, and
    nothing from the other two plugins: each plugin has its own `hooks/hooks.json`, and
    every hook runs a script inside its own plugin folder.
 3. Every skill lives in exactly one plugin, so each one has exactly one name:

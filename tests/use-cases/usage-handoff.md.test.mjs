@@ -1,7 +1,7 @@
 // Use case: tests/use-cases/usage-handoff.md
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -10,8 +10,9 @@ import { skillFile, skillModule } from "../../scripts/layout.mjs";
 const HOME = mkdtempSync(path.join(tmpdir(), "usage-handoff-"));
 process.env.USAGE_HANDOFF_HOME = HOME;
 const {
-  MESSAGED_STALE_MS, STALE_CLAIM_MS, claimResume, decide, isPending, launchCommand, listHandoffs,
-  markResumed, pace, parseWindows, resumePrompt, stalePending,
+  MESSAGED_STALE_MS, STALE_CLAIM_MS, cacheTtlMs, cachedWindows, claimResume, decide, handoffSlug, hasTranscript,
+  hookEnabled, hookMessage, hookPlan, isPending, launchCommand, listHandoffs, markResumed, openSessions, pace,
+  parseHandoff, parseWindows, resumePrompt, skeleton, stalePending,
 } = await skillModule("usage-handoff", "scripts/usage.mjs");
 
 const SCRIPT = skillFile("usage-handoff", "scripts", "usage.mjs");
@@ -152,4 +153,114 @@ test("end to end: 97% asks for handoffs, the waker wakes after the reset and sta
   assert.match(cli(["claim-resume", "--by", "resumer"], env), /"tookOverFrom": "waker"/);
   cli(["finish-resume"], env);
   assert.equal(JSON.parse(cli(["check"], env)).action, "watch");
+});
+
+// ---- the hook ----
+
+test("the hook re-reads usage every 10 minutes when low and every minute near the threshold, shared by all sessions", async () => {
+  assert.deepEqual([50, 75, 85, 99, null].map((p) => cacheTtlMs(p) / MIN), [10, 5, 1, 1, 10]);
+  rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+  let reads = 0;
+  const read = async () => ((reads += 1), { windows: parseWindows(usage(80)) }); // 80%: a 5-minute cache
+  assert.equal((await cachedWindows(T0, 95, read)).cached, false);
+  assert.equal((await cachedWindows(T0 + 2 * MIN, 95, read)).cached, true, "another session inside 5 minutes uses the cache");
+  await cachedWindows(T0 + 6 * MIN, 95, read);
+  assert.equal(reads, 2);
+  assert.equal((await cachedWindows(T0 + 6 * MIN + 1000, 95, read, true)).cached, false, "a /usage-handoff tick always reads");
+  rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+});
+
+test("the hook tells each session and each subagent once per window, and ignores a reading past its reset", () => {
+  const input = { session_id: "abcdef12-3456", cwd: "/w/repo" };
+  const hot = parseWindows(usage(97, 10, T0 + 30 * MIN));
+  assert.equal(hookPlan({ input, windows: parseWindows(usage(80)), now: T0 }), null);
+  const plan = hookPlan({ input, windows: hot, now: T0 });
+  assert.deepEqual([plan.key, plan.pct, plan.window, plan.subagent], ["abcdef12-3456:main", 97, "five_hour", false]);
+  const told = { [plan.key]: at(plan.resumeAt) };
+  assert.equal(hookPlan({ input, windows: hot, now: T0 + MIN, notified: told }), null);
+  const sub = hookPlan({ input: { ...input, agent_id: "a7" }, windows: hot, now: T0 + MIN, notified: told });
+  assert.equal(sub.subagent, true);
+  assert.equal(hookPlan({ input, windows: hot, now: T0 + 31 * MIN }), null, "stale: that window already reset");
+  // The next window: an old note doesn't silence a new one.
+  assert.ok(hookPlan({ input, windows: parseWindows(usage(97, 10, T0 + 6 * 60 * MIN)), now: T0 + 5 * 60 * MIN, notified: told }));
+
+  const main = hookMessage(plan, "/h/repo-abcdef12.md");
+  assert.match(main, /97% of the five-hour limit/);
+  assert.match(main, /SendMessage to its id/);
+  assert.match(main, /Fill in your handoff at \/h\/repo-abcdef12\.md/);
+  assert.match(main, /\/usage-handoff off/);
+  assert.match(hookMessage(sub, null), /report for your parent session/);
+});
+
+test("the hook's handoff skeleton carries the session id, folder and branch", () => {
+  assert.equal(handoffSlug("C:/work/my repo", "ffc29d72-9d35"), "my-repo-ffc29d72");
+  const h = parseHandoff(skeleton({ sessionId: "ffc29d72-9d35", cwd: "C:\\work\\repo", branch: "feat/x", resumeAt: T0, now: T0 }));
+  assert.deepEqual([h.status, h.sessionid, h.cwd, h.branch, h.resets], ["pending", "ffc29d72-9d35", "C:/work/repo", "feat/x", "2026-11-01T20:00:00Z"]);
+});
+
+test("the hook end to end: one note per session, a waker started, and the off switch", () => {
+  const fixture = path.join(HOME, "hook-usage.json");
+  writeFileSync(fixture, JSON.stringify(usage(97, 20, Date.now() + 40 * MIN)));
+  const env = { USAGE_HANDOFF_FIXTURE: fixture, USAGE_HANDOFF_DRY_LAUNCH: "1" };
+  cli(["reset"], env);
+  rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+  rmSync(path.join(HOME, "notified.json"), { force: true });
+  const hook = (input, extra = {}) => execFileSync(process.execPath, [SCRIPT, "--hook"], {
+    encoding: "utf8", input: JSON.stringify(input), env: { ...process.env, USAGE_HANDOFF_HOME: HOME, ...env, ...extra },
+  });
+  const input = { hook_event_name: "PostToolUse", session_id: "11112222-aaaa", cwd: HOME, tool_name: "Bash" };
+  try {
+    const first = JSON.parse(hook(input));
+    assert.equal(first.hookSpecificOutput.hookEventName, "PostToolUse");
+    assert.match(first.hookSpecificOutput.additionalContext, /Wrap up before it runs out/);
+    const file = path.join(HOME, "handoffs", `${handoffSlug(HOME, "11112222-aaaa")}.md`);
+    assert.equal(parseHandoff(readFileSync(file, "utf8")).sessionid, "11112222-aaaa");
+    assert.equal(hook(input), "", "told once");
+    assert.match(hook({ ...input, agent_id: "sub-1" }), /report for your parent session/);
+    assert.equal(hook({ ...input, hook_event_name: "SessionStart", session_id: "x" }), "", "other events are ignored");
+    assert.equal(JSON.parse(cli(["status"], env)).phase, "handoff");
+
+    // The off switch, from the skill and from the environment.
+    assert.match(cli(["hook", "off"], env), /hook: off/);
+    assert.equal(hook({ ...input, session_id: "33334444-bbbb" }), "");
+    assert.equal(hookEnabled({}), false);
+    assert.match(cli(["hook", "on"], env), /hook: on/);
+    assert.equal(hook({ ...input, session_id: "55556666-cccc" }, { USAGE_HANDOFF_HOOK: "off" }), "");
+    assert.match(hook({ ...input, session_id: "77778888-dddd" }), /Wrap up/);
+  } finally {
+    const pid = JSON.parse(cli(["status"], env)).waker?.pid;
+    if (pid) try { process.kill(pid); } catch {}
+    cli(["reset"], env);
+  }
+});
+
+test("open sessions are messaged, closed ones reopen with claude --resume", () => {
+  const cfg = mkdtempSync(path.join(tmpdir(), "usage-handoff-cfg-"));
+  mkdirSync(path.join(cfg, "sessions"));
+  mkdirSync(path.join(cfg, "projects", "C--work-repo"), { recursive: true });
+  writeFileSync(path.join(cfg, "sessions", `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "open-1" }));
+  writeFileSync(path.join(cfg, "sessions", "999999.json"), JSON.stringify({ pid: 999999, sessionId: "gone-1" }));
+  writeFileSync(path.join(cfg, "projects", "C--work-repo", "gone-1.jsonl"), "{}\n");
+  const open = openSessions(path.join(cfg, "sessions"), (pid) => pid === process.pid);
+  assert.deepEqual([...open.keys()], ["open-1"]);
+  assert.equal(hasTranscript("gone-1", path.join(cfg, "projects")), true);
+  assert.equal(hasTranscript("../x", path.join(cfg, "projects")), false);
+
+  const win = launchCommand({ platform: "win32", cwd: "C:/work/repo", prompt: "go", resumeId: "gone-1", has: () => false });
+  assert.match(win.args[0], /cmd \/k claude --resume gone-1 "go"$/);
+  const mac = launchCommand({ platform: "darwin", cwd: "/w", prompt: "go", resumeId: "gone-1", has: () => false });
+  assert.match(mac.args[1], /claude --resume gone-1 'go'/);
+
+  // The CLI: a session that is still open is refused; a closed one is reopened by its id.
+  const env = { CLAUDE_CONFIG_DIR: cfg };
+  const openFile = path.join(HOME, "handoffs", "open.md");
+  writeFileSync(openFile, `Status: pending\nSessionId: open-1\nCwd: ${HOME}\n`);
+  assert.throws(() => execFileSync(process.execPath, [SCRIPT, "launch", openFile, "--dry-run"], {
+    env: { ...process.env, USAGE_HANDOFF_HOME: HOME, ...env }, stdio: "pipe",
+  }), /still open/);
+  const goneFile = path.join(HOME, "handoffs", "gone.md");
+  writeFileSync(goneFile, `Status: pending\nSessionId: gone-1\nCwd: ${HOME}\n`);
+  assert.equal(JSON.parse(cli(["launch", goneFile, "--dry-run"], env)).resumed, "gone-1");
+  const pending = JSON.parse(cli(["pending"], env)).filter((h) => ["open-1", "gone-1"].includes(h.sessionid));
+  assert.deepEqual(pending.map((h) => [h.sessionid, h.open, h.canReopen]).sort(), [["gone-1", false, true], ["open-1", true, false]]);
 });

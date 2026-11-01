@@ -21,6 +21,7 @@ export const PROBES = {
   "fleet-manager": { script: "fleet-manager/scripts/debounce.mjs", events: ["UserPromptSubmit", "PreToolUse"] },
   "request-inbox": { script: "request-inbox/scripts/inbox.mjs", events: ["SessionStart"] },
   project: { script: "project/scripts/projects.mjs", events: ["SessionStart"] },
+  "usage-handoff": { script: "usage-handoff/scripts/usage.mjs", events: ["UserPromptSubmit", "PostToolUse"] },
 };
 
 const slash = (p) => p.replace(/\\/g, "/");
@@ -33,7 +34,7 @@ export function hookCommands(settings, event) {
 
 // Problems with the hooks under skillsDir: [{ skill, problem }]. settings = null skips the
 // registration check (plugin installs register hooks through the plugin's hooks.json). The probes
-// run in parallel, so a SessionStart doctor costs one probe's time, not four.
+// run in parallel, so a SessionStart doctor costs one probe's time, not five.
 export async function diagnose(skillsDir, settings, run = selfTest) {
   const installed = Object.entries(PROBES).filter(([skill]) => existsSync(path.join(skillsDir, skill)));
   const results = await Promise.all(installed.map(([, p]) => run(path.join(skillsDir, p.script))));

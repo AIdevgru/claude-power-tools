@@ -14,9 +14,18 @@
 //   finish-resume                Back to watching.
 //   launch FILE [--dry-run]      Open a new terminal running `claude` that resumes from FILE.
 //   wake                         (background) sleep until the reset, then start a resume session.
+//   hook on|off|status           Switch the hook below on or off for every session (default on).
 //   status | reset | paths
 //
+//   --hook                       Hook mode (UserPromptSubmit, PostToolUse): reads hook JSON on stdin.
+//                                Reads usage from a shared cache (refreshed every 1-10 minutes,
+//                                sooner as usage climbs). At the threshold it creates this
+//                                session's handoff file, tells the session (or subagent) once per
+//                                window to wrap up, and starts the waker. Silent otherwise.
+//   --self-test                  Prints "ok" (for the hook doctor).
+//
 // Configuration (all optional):
+//   USAGE_HANDOFF_HOOK     "off" turns the hook off, whatever config.json says
 //   USAGE_HANDOFF_HOME     state, handoffs and logs (default: ~/.claude/usage-handoff)
 //   USAGE_HANDOFF_CMD      a command that prints usage JSON in the /api/oauth/usage shape
 //   USAGE_HANDOFF_FIXTURE  a JSON file to read instead (tests)
@@ -145,11 +154,75 @@ async function readWindows() {
   }
 }
 
+// ---- shared usage cache, so many sessions' hooks cost one request per minute at most ----
+
+const cacheFile = () => path.join(home(), "usage-cache.json");
+const configFile = () => path.join(home(), "config.json");
+
+// How long a cached reading stays good: a minute near the threshold, ten when far below it.
+export function cacheTtlMs(pct, threshold = DEFAULT_THRESHOLD) {
+  if (pct == null) return 10 * 60_000; // the last read failed: don't hammer the endpoint
+  if (pct >= threshold - 10) return 60_000;
+  if (pct >= threshold - 20) return 5 * 60_000;
+  return 10 * 60_000;
+}
+
+// force: read now (the /usage-handoff tick), but still share the reading with the hooks.
+export async function cachedWindows(now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, force = false) {
+  let cache = {};
+  try { cache = JSON.parse(readFileSync(cacheFile(), "utf8")); } catch {}
+  const pct = cache.windows?.[0]?.pct ?? null;
+  const fresh = cache.at && now - cache.at < cacheTtlMs(pct, threshold);
+  const leased = cache.leaseAt && now - cache.leaseAt < 30_000; // another session is reading right now
+  if (!force && (fresh || leased)) return { windows: cache.windows ?? null, error: cache.error, cached: true };
+  mkdirSync(home(), { recursive: true });
+  writeFileSync(cacheFile(), JSON.stringify({ ...cache, leaseAt: now }));
+  const r = await read();
+  writeFileSync(cacheFile(), JSON.stringify({ at: now, windows: r.windows, ...(r.error ? { error: r.error } : {}) }));
+  return { ...r, cached: false };
+}
+
+export function hookEnabled(env = process.env) {
+  if (/^(off|0|false|no)$/i.test(env.USAGE_HANDOFF_HOOK ?? "")) return false;
+  try { return JSON.parse(readFileSync(configFile(), "utf8")).hook !== "off"; } catch { return true; }
+}
+
+function setHook(value) {
+  let cfg = {};
+  try { cfg = JSON.parse(readFileSync(configFile(), "utf8")); } catch {}
+  mkdirSync(home(), { recursive: true });
+  writeFileSync(configFile(), JSON.stringify({ ...cfg, hook: value }, null, 2) + "\n");
+}
+
+// ---- open sessions, from Claude Code's own session registry (~/.claude/sessions/<pid>.json) ----
+
+const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude");
+
+// Session id -> pid for every Claude Code session whose process is still running. Empty if the
+// registry isn't there (it's Claude Code's internal format, so treat it as a hint).
+export function openSessions(dir = path.join(claudeDir(), "sessions"), isAlive = alive) {
+  const out = new Map();
+  if (!existsSync(dir)) return out;
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".json"))) {
+    try {
+      const s = JSON.parse(readFileSync(path.join(dir, f), "utf8"));
+      if (s.sessionId && s.pid && isAlive(s.pid)) out.set(s.sessionId, s.pid);
+    } catch {}
+  }
+  return out;
+}
+
+// True if Claude Code still has the conversation, so `claude --resume <id>` can reopen it.
+export function hasTranscript(sessionId, dir = path.join(claudeDir(), "projects")) {
+  if (!sessionId || !/^[\w-]+$/.test(sessionId) || !existsSync(dir)) return false;
+  return readdirSync(dir).some((p) => existsSync(path.join(dir, p, `${sessionId}.jsonl`)));
+}
+
 // Handoff files: Markdown with "Key: value" header lines.
 export function parseHandoff(text) {
   const out = {};
   for (const line of text.split(/\r?\n/).slice(0, 30)) {
-    const m = /^(Status|Session|Cwd|Branch|PR|Written|Resets):\s*(.*)$/.exec(line.trim());
+    const m = /^(Status|Session|SessionId|Cwd|Branch|PR|Written|Resets):\s*(.*)$/.exec(line.trim());
     if (m && !(m[1].toLowerCase() in out)) out[m[1].toLowerCase()] = m[2].trim();
   }
   return out;
@@ -202,18 +275,21 @@ export function claimResume(by, state = readState(), now = Date.now()) {
 // Text that survives cmd.exe, wt and shell quoting: no quotes, separators or redirections.
 const safe = (s) => s.replace(/["`$;&|<>^%!]/g, "'").replace(/\s+/g, " ").trim();
 
-export const resumePrompt = (file) => safe(`Resume from the usage handoff at ${fwd(file)}. Read it first, set its Status line to resumed by plus your session name, run git status in its Cwd, then carry on with its Next steps. Restart any subagent work it lists under In flight.`);
+export const resumePrompt = (file) => safe(`Resume from the usage handoff at ${fwd(file)}. Read it first, set its Status line to resumed by plus your session name, run git status in its Cwd, then carry on with its Next steps. If its sections are still empty, the session ran out of usage before writing them: work out where it stopped from the conversation and git status. Restart any subagent work that was in flight.`);
 export const RESUMER_PROMPT = safe("Claude usage has reset. Run the usage-handoff skill with the argument resume to restart the sessions that wrote handoffs.");
 
-// The command that opens a new terminal running `claude <prompt>` in cwd, or null if none is known.
-export function launchCommand({ platform = process.platform, cwd, prompt, has = onPath }) {
+// The command that opens a new terminal running claude in cwd, or null if none is known. With
+// resumeId it reopens that conversation (claude --resume <id> <prompt>) instead of a fresh one.
+export function launchCommand({ platform = process.platform, cwd, prompt, resumeId = null, has = onPath }) {
   const p = safe(prompt);
+  const id = resumeId && /^[\w-]+$/.test(resumeId) ? resumeId : null;
+  const resume = id ? `--resume ${id} ` : "";
   if (platform === "win32") {
     const dir = cwd.replace(/\//g, "\\");
-    if (has("wt.exe") || has("wt")) return { cmd: "wt.exe", args: ["-w", "new", "-d", dir, "cmd", "/k", "claude", p] };
-    return { cmd: "cmd.exe", args: [`/c start "claude resume" /D "${dir}" cmd /k claude "${p}"`], verbatim: true };
+    if (has("wt.exe") || has("wt")) return { cmd: "wt.exe", args: ["-w", "new", "-d", dir, "cmd", "/k", "claude", ...(id ? ["--resume", id] : []), p] };
+    return { cmd: "cmd.exe", args: [`/c start "claude resume" /D "${dir}" cmd /k claude ${resume}"${p}"`], verbatim: true };
   }
-  const sh = `cd '${cwd.replace(/'/g, "'\\''")}' && claude '${p}'`;
+  const sh = `cd '${cwd.replace(/'/g, "'\\''")}' && claude ${resume}'${p}'`;
   if (platform === "darwin") {
     return { cmd: "osascript", args: ["-e", `tell application "Terminal" to do script "${sh.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`] };
   }
@@ -232,10 +308,10 @@ function onPath(name) {
   }
 }
 
-function launch(cwd, prompt, dryRun) {
+function launch(cwd, prompt, dryRun, resumeId = null) {
   if (!cwd || !existsSync(cwd)) throw new Error(`folder not found: ${cwd}`);
-  const c = launchCommand({ cwd, prompt });
-  if (!c) throw new Error(`no terminal found; run this yourself: cd "${cwd}" && claude "${safe(prompt)}"`);
+  const c = launchCommand({ cwd, prompt, resumeId });
+  if (!c) throw new Error(`no terminal found; run this yourself: cd "${cwd}" && claude ${resumeId ? `--resume ${resumeId} ` : ""}"${safe(prompt)}"`);
   if (dryRun || process.env.USAGE_HANDOFF_DRY_LAUNCH) return c; // the env var is for tests
   spawn(c.cmd, c.args, { detached: true, stdio: "ignore", windowsVerbatimArguments: !!c.verbatim }).unref();
   return c;
@@ -300,6 +376,95 @@ async function wake() {
   }
 }
 
+// ---- hook mode ----
+
+const notifiedFile = () => path.join(home(), "notified.json");
+const readJson = (file, fallback) => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return fallback; } };
+const localTime = (ms) => {
+  try { return new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" }); } catch { return iso(ms); }
+};
+
+export const handoffSlug = (cwd, sessionId) =>
+  `${path.basename(cwd || "session").replace(/[^\w.-]/g, "-")}-${String(sessionId || "unknown").replace(/[^\w-]/g, "").slice(0, 8)}`;
+
+export function skeleton({ sessionId, cwd, branch = "-", resumeAt, now = Date.now() }) {
+  return [
+    "# Handoff", "Status: pending", "Session: (fill in your session name)", `SessionId: ${sessionId}`, `Cwd: ${fwd(cwd)}`,
+    `Branch: ${branch || "-"}`, "PR: -", `Written: ${iso(now)}`, `Resets: ${iso(resumeAt)}`, "",
+    "## Goal", "", "## Done", "", "## In flight (one entry per subagent)", "", "## Next steps", "", "## Watch out for", "",
+  ].join("\n");
+}
+
+// What one hook call should do, without side effects: null to stay quiet, or who to tell what.
+// Each session and each subagent hears it once per usage window.
+export function hookPlan({ input, windows, threshold = DEFAULT_THRESHOLD, notified = {}, now = Date.now() }) {
+  // A reading whose reset time has passed is stale: the window is already empty again.
+  const hot = (windows ?? []).filter((w) => w.pct >= threshold && (w.resetsAt == null || w.resetsAt > now));
+  if (!hot.length || !input?.session_id) return null;
+  const resumeAt = Math.max(...hot.map((w) => w.resetsAt ?? now + MAX_WAKE_S * 1000));
+  const key = `${input.session_id}:${input.agent_id || "main"}`;
+  if (notified[key] && Date.parse(notified[key]) > now) return null;
+  return { key, resumeAt, pct: hot[0].pct, window: hot[0].name, subagent: Boolean(input.agent_id) };
+}
+
+export function hookMessage(plan, file) {
+  const head = `usage-handoff: Claude usage is at ${plan.pct}% of the ${plan.window.replace(/_/g, "-")} limit (resets ${localTime(plan.resumeAt)}).`;
+  if (plan.subagent) {
+    return `${head} Stop at the next safe point: finish or undo the step you're on, start nothing new, and end with a short report for your parent session: your goal, what's done, what's left, your worktree and branch, and any uncommitted changes.`;
+  }
+  return [
+    `${head} Wrap up before it runs out:`,
+    "1. Stop starting new work, and don't launch new subagents.",
+    "2. Tell each subagent you have running (SendMessage to its id) to stop at a safe point and report its goal, what's done, what's left, its worktree and branch, and any uncommitted changes.",
+    "3. Save uncommitted work as a WIP commit on your own branch if the repo's rules allow (never git stash).",
+    `4. Fill in your handoff at ${fwd(file)}: Read it, put your session name on the Session line, and write each section so a fresh session could carry on.`,
+    "5. End your turn. After the reset this session is reopened or messaged and told to resume from that file.",
+    "The owner can turn this off with /usage-handoff off.",
+  ].join("\n");
+}
+
+function ensureSkeleton(input, resumeAt, now) {
+  const file = path.join(handoffDir(), `${handoffSlug(input.cwd, input.session_id)}.md`);
+  if (existsSync(file) && isPending(parseHandoff(readFileSync(file, "utf8")))) return file;
+  let branch = "-";
+  try {
+    branch = execFileSync("git", ["-C", input.cwd, "branch", "--show-current"], { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim() || "-";
+  } catch {}
+  mkdirSync(handoffDir(), { recursive: true });
+  writeFileSync(file, skeleton({ sessionId: input.session_id, cwd: input.cwd || process.cwd(), branch, resumeAt, now }));
+  return file;
+}
+
+// The first session to see the threshold records the reset and starts the waker; later ones only
+// make sure a waker is still running.
+function ensureArmed(resumeAt, cwd, now) {
+  const st = readState();
+  const cur = Date.parse(st.resumeAt);
+  const next = st.phase === "watching" || !Number.isFinite(cur) || cur < resumeAt
+    ? { ...st, phase: "handoff", resumeAt: iso(resumeAt), cwd: fwd(cwd || process.cwd()), requestedAt: iso(now), messaged: {} }
+    : st;
+  next.waker = armWaker(next);
+  writeState(next);
+}
+
+export async function runHook(raw, now = Date.now()) {
+  if (!hookEnabled()) return null;
+  const input = JSON.parse(raw || "{}");
+  const event = input.hook_event_name;
+  if (event !== "UserPromptSubmit" && event !== "PostToolUse") return null;
+  const threshold = readState().threshold ?? DEFAULT_THRESHOLD;
+  const { windows } = await cachedWindows(now, threshold);
+  const notified = readJson(notifiedFile(), {});
+  const plan = hookPlan({ input, windows, threshold, notified, now });
+  if (!plan) return null;
+  const file = plan.subagent ? null : ensureSkeleton(input, plan.resumeAt, now);
+  for (const [k, v] of Object.entries(notified)) if (Date.parse(v) < now - 24 * 3600_000) delete notified[k];
+  notified[plan.key] = iso(plan.resumeAt);
+  writeFileSync(notifiedFile(), JSON.stringify(notified, null, 2));
+  ensureArmed(plan.resumeAt, input.cwd, now);
+  return { hookSpecificOutput: { hookEventName: event, additionalContext: hookMessage(plan, file) } };
+}
+
 function flag(args, name, fallback) {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
@@ -308,13 +473,22 @@ function flag(args, name, fallback) {
 async function main(argv) {
   const [cmd = "check", ...args] = argv;
   const out = (o) => console.log(typeof o === "string" ? o : JSON.stringify(o, null, 2));
+  if (cmd === "--self-test") return out("ok usage-handoff");
+  if (cmd === "--hook") {
+    // Fails open: any error leaves the session alone.
+    try {
+      const r = await runHook(readFileSync(0, "utf8"));
+      if (r) out(r);
+    } catch {}
+    return 0;
+  }
   const state = readState();
 
   switch (cmd) {
     case "check": {
       const threshold = Number(flag(args, "--threshold", state.threshold ?? DEFAULT_THRESHOLD));
       if (state.threshold !== threshold) writeState({ ...state, threshold });
-      const { windows, error } = await readWindows();
+      const { windows, error } = await cachedWindows(Date.now(), threshold, readWindows, true);
       const d = decide({ windows, state, threshold });
       const handoffs = listHandoffs();
       return out({
@@ -348,8 +522,20 @@ async function main(argv) {
       out(r);
       return r.claimed ? 0 : 3;
     }
-    case "pending":
-      return out(listHandoffs().filter(isPending));
+    case "pending": {
+      // open: the session is still running (message it); canReopen: claude --resume can bring it back.
+      const open = openSessions();
+      return out(listHandoffs().filter(isPending).map((h) => ({
+        ...h,
+        open: h.sessionid ? open.has(h.sessionid) : null,
+        canReopen: hasTranscript(h.sessionid),
+      })));
+    }
+    case "hook": {
+      if (args[0] === "on" || args[0] === "off") setHook(args[0]);
+      const env = /^(off|0|false|no)$/i.test(process.env.USAGE_HANDOFF_HOOK ?? "");
+      return out(`usage-handoff hook: ${hookEnabled() ? "on" : "off"}${env ? " (USAGE_HANDOFF_HOOK is set)" : ""}`);
+    }
     case "mark-messaged": {
       const messaged = { ...(state.messaged ?? {}) };
       for (const f of args) messaged[fwd(path.resolve(f))] = Date.now();
@@ -365,7 +551,11 @@ async function main(argv) {
     case "launch": {
       const file = args.find((a) => !a.startsWith("--"));
       const h = parseHandoff(readFileSync(file, "utf8"));
-      out({ launched: launch(h.cwd, resumePrompt(file), args.includes("--dry-run")), cwd: h.cwd });
+      if (h.sessionid && openSessions().has(h.sessionid) && !args.includes("--force")) {
+        throw new Error(`session ${h.sessionid} is still open; message it instead (--force opens a second copy)`);
+      }
+      const resumeId = hasTranscript(h.sessionid) ? h.sessionid : null;
+      out({ launched: launch(h.cwd, resumePrompt(file), args.includes("--dry-run"), resumeId), cwd: h.cwd, resumed: resumeId });
       return 0;
     }
     case "wake":

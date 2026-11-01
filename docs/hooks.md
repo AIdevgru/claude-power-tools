@@ -13,6 +13,7 @@ command or session start goes ahead as if the hook weren't there.
 | git-guard approvals | `power-tools` | `UserPromptSubmit` | Records merges you approve for the opt-in merge gate: a first line that is only `approve merge #12`. | With the gate on, every `gh pr merge` is denied. |
 | hook doctor | `power-tools` | `SessionStart` | Checks that every installed hook script runs (under the plugins, the `power-tools` ones). Silent unless one is broken, since a broken hook otherwise looks the same as one with nothing to do. | A broken hook goes unnoticed. |
 | fleet-manager debounce | `power-tools` | `UserPromptSubmit`, `PreToolUse` (`Skill`) | Skips a `/fleet-manager` pass that ran under 10 minutes ago, or when nothing changed since a quiet pass (backoff 30 min → 4 h). | Every pass runs in full, so loops cost more. |
+| usage-handoff | `power-tools` | `UserPromptSubmit`, `PostToolUse` | Reads Claude usage from a cache shared by every session (re-read every 1 to 10 minutes). At 95% it tells the session, or the subagent, once per window to wrap up and fill in a handoff, creates the handoff file, and starts a background waker that reopens the work after the reset. Turn it off with `/usage-handoff off` or `USAGE_HANDOFF_HOOK=off`. | Sessions stop mid-task at the limit, unless `/loop /usage-handoff` is running. |
 | request-inbox check | `power-tools` | `SessionStart` | Lists pending inbox requests in the new session's context. Silent in repos without an inbox. | Sessions see requests only when `/request-inbox` runs. |
 | project resume | `power-tools-projects` | `SessionStart` | When a session starts in a project with `/new-project` stages left, prints one line naming the next step. | You resume with `/new-project resume`. |
 | completion gates | `power-tools` | `Stop` (in the skills' own frontmatter) | Keep `implement-to-pr` and `finish-pr` working until they end with a `*-COMPLETE:` or `*-BLOCKED:` line. | Nothing to install: they come with the skills. |
@@ -51,14 +52,16 @@ no hooks.
   "hooks": {
     "UserPromptSubmit": [
       { "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/fleet-manager/scripts/debounce.mjs\"", "timeout": 45, "statusMessage": "Checking /fleet-manager debounce" }] },
-      { "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/git-guard/scripts/git-guard.mjs\"", "timeout": 15 }] }
+      { "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/git-guard/scripts/git-guard.mjs\"", "timeout": 15 }] },
+      { "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/usage-handoff/scripts/usage.mjs\" --hook", "timeout": 15 }] }
     ],
     "PreToolUse": [
       { "matcher": "Skill", "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/fleet-manager/scripts/debounce.mjs\"", "timeout": 45, "statusMessage": "Checking /fleet-manager debounce" }] },
       { "matcher": "Bash|PowerShell", "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/git-guard/scripts/git-guard.mjs\"", "timeout": 15 }] }
     ],
     "PostToolUse": [
-      { "matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/git-guard/scripts/git-guard.mjs\"", "timeout": 10 }] }
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/git-guard/scripts/git-guard.mjs\"", "timeout": 10 }] },
+      { "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/usage-handoff/scripts/usage.mjs\" --hook", "timeout": 15 }] }
     ],
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "node \"~/.claude/skills/request-inbox/scripts/inbox.mjs\" --hook", "timeout": 15 }] },

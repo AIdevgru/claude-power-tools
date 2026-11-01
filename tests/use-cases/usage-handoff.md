@@ -3,6 +3,28 @@
 Lee has four Claude sessions working on one repo, some with subagents of their own, and a Claude
 subscription with a 5-hour usage window.
 
+## With the hook (the default)
+
+1. Lee installs power-tools and does nothing else. After every prompt and tool call, each
+   session's hook reads usage from a cache that every session shares, so the endpoint is asked at
+   most once a minute near the limit and once every 10 minutes when usage is low.
+2. The 5-hour window reaches 96%. On its next tool call, each session gets one note: wrap up,
+   ask your subagents where they are, WIP-commit, and fill in the handoff file the hook just
+   created. The file already has `Status: pending`, the session id, the folder and the branch.
+   A subagent's own tool call gets a shorter note: stop at a safe point and report to the parent.
+   Neither hears it twice in the same window.
+3. The first session to cross the threshold records the reset time and starts the background
+   waker.
+4. After the reset the waker starts a Claude session that runs `/usage-handoff resume`. Sessions
+   still open are messaged to resume; a closed one reopens with `claude --resume <its id>`, so it
+   comes back with its whole conversation, even if it ran out before writing anything. `launch`
+   won't reopen a session that is still open.
+5. Lee doesn't want this on one machine, so they type `/usage-handoff off`. The hook stays
+   silent in every session until `/usage-handoff on`. `USAGE_HANDOFF_HOOK=off` does the same for
+   one environment.
+
+## With a watcher loop
+
 1. Lee runs `/loop /usage-handoff` in a fifth session. Each tick reads the same usage numbers
    `/usage` shows. At 40% it checks back in an hour; at 80% every 15 minutes; at 85% every 5; at 92% every
    2 minutes. The extra-usage credits don't count as a window.
