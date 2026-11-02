@@ -265,7 +265,9 @@ export function claimResume(by, state = readState(), now = Date.now()) {
   } catch {
     let held = {};
     try { held = JSON.parse(readFileSync(lock, "utf8")); } catch {}
-    const canTake = held.by === by || (held.by === "waker" && by !== "waker") || !held.at || now - held.at > STALE_CLAIM_MS;
+    // A waker never re-takes a waker's claim: that claim means a resume session was already started.
+    const sameSession = held.by === by && by !== "waker";
+    const canTake = sameSession || (held.by === "waker" && by !== "waker") || !held.at || now - held.at > STALE_CLAIM_MS;
     if (!canTake) return { claimed: false, by: held.by };
     writeFileSync(lock, body);
     return { claimed: true, by, tookOverFrom: held.by };
@@ -278,23 +280,64 @@ const safe = (s) => s.replace(/["`$;&|<>^%!]/g, "'").replace(/\s+/g, " ").trim()
 export const resumePrompt = (file) => safe(`Resume from the usage handoff at ${fwd(file)}. Read it first, set its Status line to resumed by plus your session name, run git status in its Cwd, then carry on with its Next steps. If its sections are still empty, the session ran out of usage before writing them: work out where it stopped from the conversation and git status. Restart any subagent work that was in flight.`);
 export const RESUMER_PROMPT = safe("Claude usage has reset. Run the usage-handoff skill with the argument resume to restart the sessions that wrote handoffs.");
 
+// What the hidden resume session may use: the skill, its script, and the session tools.
+export const RESUMER_TOOLS = "Skill,ToolSearch,ListAgents,SendMessage,Read,Bash(node:*),PowerShell(node:*)";
+
+// The full path of the claude executable. Starting it by name isn't reliable: cmd.exe misses
+// entries late in a long PATH, and a waker started from a hook may not have the user's PATH.
+// USAGE_HANDOFF_CLAUDE overrides.
+export function resolveClaude({ env = process.env, platform = process.platform, exists = existsSync, which = whichAll } = {}) {
+  if (env.USAGE_HANDOFF_CLAUDE) return env.USAGE_HANDOFF_CLAUDE;
+  const found = which("claude");
+  const pick = platform === "win32" ? found.find((p) => /\.exe$/i.test(p)) ?? found.find((p) => /\.(cmd|bat)$/i.test(p)) : found[0];
+  if (pick) return pick;
+  const home = env.USERPROFILE || env.HOME || homedir();
+  const known = platform === "win32"
+    ? [path.join(home, ".local", "bin", "claude.exe"), path.join(env.APPDATA || path.join(home, "AppData", "Roaming"), "npm", "claude.cmd")]
+    : [path.join(home, ".local", "bin", "claude"), path.join(home, ".claude", "local", "claude"), "/usr/local/bin/claude", "/opt/homebrew/bin/claude"];
+  return known.find((p) => exists(p)) ?? "claude";
+}
+
+function whichAll(name) {
+  try {
+    const out = execFileSync(process.platform === "win32" ? "where" : "which", [name], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] });
+    return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const isShim = (p) => /\.(cmd|bat)$/i.test(p);
+
+// The hidden resume session: claude -p, no window, output to resumer.log. It messages the open
+// sessions (they resume in their own windows) and opens windows only for sessions that closed.
+export function resumerCommand({ platform = process.platform, prompt = RESUMER_PROMPT, claude = resolveClaude({ platform }) } = {}) {
+  const args = ["-p", safe(prompt), "--allowedTools", RESUMER_TOOLS, "--max-turns", "40"];
+  // A .cmd shim (npm installs) only runs through cmd.exe; `call` keeps cmd from eating the quotes.
+  if (platform === "win32" && isShim(claude)) {
+    return { cmd: "cmd.exe", args: [`/d /c call "${claude}" -p "${args[1]}" --allowedTools "${RESUMER_TOOLS}" --max-turns 40`], verbatim: true };
+  }
+  return { cmd: claude, args };
+}
+
 // The command that opens a new terminal running claude in cwd, or null if none is known. With
 // resumeId it reopens that conversation (claude --resume <id> <prompt>) instead of a fresh one.
-export function launchCommand({ platform = process.platform, cwd, prompt, resumeId = null, has = onPath }) {
+// The window closes by itself when that claude exits.
+export function launchCommand({ platform = process.platform, cwd, prompt, resumeId = null, has = onPath, claude = resolveClaude({ platform }) }) {
   const p = safe(prompt);
   const id = resumeId && /^[\w-]+$/.test(resumeId) ? resumeId : null;
   const resume = id ? `--resume ${id} ` : "";
   if (platform === "win32") {
     const dir = cwd.replace(/\//g, "\\");
-    if (has("wt.exe") || has("wt")) return { cmd: "wt.exe", args: ["-w", "new", "-d", dir, "cmd", "/k", "claude", ...(id ? ["--resume", id] : []), p] };
-    return { cmd: "cmd.exe", args: [`/c start "claude resume" /D "${dir}" cmd /k claude ${resume}"${p}"`], verbatim: true };
+    if (has("wt.exe") || has("wt")) return { cmd: "wt.exe", args: ["-w", "new", "-d", dir, "cmd", "/c", "call", claude, ...(id ? ["--resume", id] : []), p] };
+    return { cmd: "cmd.exe", args: [`/c start "claude resume" /D "${dir}" cmd /c call "${claude}" ${resume}"${p}"`], verbatim: true };
   }
-  const sh = `cd '${cwd.replace(/'/g, "'\\''")}' && claude ${resume}'${p}'`;
+  const sh = `cd '${cwd.replace(/'/g, "'\\''")}' && '${claude.replace(/'/g, "'\\''")}' ${resume}'${p}'`;
   if (platform === "darwin") {
     return { cmd: "osascript", args: ["-e", `tell application "Terminal" to do script "${sh.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`] };
   }
   for (const [term, flag] of [["x-terminal-emulator", "-e"], ["gnome-terminal", "--"], ["konsole", "-e"], ["xterm", "-e"]]) {
-    if (has(term)) return { cmd: term, args: [flag, "bash", "-lc", `${sh}; exec bash`] };
+    if (has(term)) return { cmd: term, args: [flag, "bash", "-lc", sh] };
   }
   return null;
 }
@@ -318,7 +361,22 @@ function launch(cwd, prompt, dryRun, resumeId = null) {
     throw new Error(`no terminal found; run this yourself: ${manual}`);
   }
   if (dry) return c;
-  spawn(c.cmd, c.args, { detached: true, stdio: "ignore", windowsVerbatimArguments: !!c.verbatim }).unref();
+  // windowsHide hides only the short-lived launcher; `start` opens the one visible window.
+  spawn(c.cmd, c.args, { detached: true, stdio: "ignore", windowsHide: true, windowsVerbatimArguments: !!c.verbatim }).unref();
+  return c;
+}
+
+const resumerLog = () => path.join(home(), "resumer.log");
+
+// Starts the hidden resume session in cwd. No window; its output goes to resumer.log.
+function startResumer(cwd) {
+  const c = resumerCommand();
+  if (process.env.USAGE_HANDOFF_DRY_LAUNCH) return c; // tests
+  mkdirSync(home(), { recursive: true });
+  appendFileSync(resumerLog(), `\n--- ${iso(Date.now())} resume session in ${fwd(cwd)}\n`);
+  const fd = openSync(resumerLog(), "a");
+  spawn(c.cmd, c.args, { cwd, detached: true, windowsHide: true, windowsVerbatimArguments: !!c.verbatim, stdio: ["ignore", fd, fd] }).unref();
+  closeSync(fd);
   return c;
 }
 
@@ -365,17 +423,23 @@ async function wake() {
       await sleep(5 * 60_000);
       continue;
     }
+    const pending = listHandoffs().filter(isPending);
+    if (!pending.length) {
+      writeState({ ...readState(), phase: "watching", waker: null, lastResumeAt: iso(Date.now()) });
+      return log(`waker ${process.pid}: usage reset, no pending handoffs, nothing to start`);
+    }
     const claim = claimResume("waker", state);
-    if (claim.claimed) writeState({ ...readState(), phase: "resuming" });
+    if (claim.claimed) writeState({ ...readState(), phase: "resuming", resumingSince: iso(Date.now()) });
     else {
       await sleep(5 * 60_000); // a session is resuming; check again in case it stops halfway
       continue;
     }
     try {
-      const c = launch(state.cwd || homedir(), RESUMER_PROMPT, false);
-      log(`waker ${process.pid}: started a resume session in ${state.cwd}: ${c.cmd ? `${c.cmd} ${c.args.join(" ")}` : `(dry run, no terminal) ${c.manual}`}`);
+      const cwd = state.cwd && existsSync(state.cwd) ? state.cwd : homedir();
+      const c = startResumer(cwd);
+      log(`waker ${process.pid}: started a hidden resume session for ${pending.length} handoff(s) in ${fwd(cwd)}: ${c.cmd} ${c.args.join(" ")}`);
     } catch (e) {
-      log(`waker ${process.pid}: could not start a session: ${e.message}`);
+      log(`waker ${process.pid}: could not start the resume session: ${e.message}`);
     }
     return;
   }
@@ -465,7 +529,10 @@ export async function runHook(raw, now = Date.now()) {
     // A restart is due but its waker is gone (the machine rebooted, say): start one, and it
     // resumes right away.
     const st = readState();
-    if (st.phase !== "watching" && Date.parse(st.resumeAt) < now && !(st.waker?.pid && alive(st.waker.pid))) {
+    // Only while waiting for the reset; once a resume has started it owns the restart, unless it
+    // has been stuck for longer than a claim lasts.
+    const stuck = st.phase === "resuming" && now - (Date.parse(st.resumingSince) || now) > STALE_CLAIM_MS;
+    if ((st.phase === "handoff" || stuck) && Date.parse(st.resumeAt) < now && !(st.waker?.pid && alive(st.waker.pid))) {
       writeState({ ...st, waker: armWaker({ ...st, waker: null }) });
     }
     return null;
@@ -531,7 +598,7 @@ async function main(argv) {
     }
     case "claim-resume": {
       const r = claimResume(flag(args, "--by", "unknown"), state);
-      if (r.claimed) writeState({ ...state, phase: "resuming" });
+      if (r.claimed) writeState({ ...state, phase: "resuming", resumingSince: iso(Date.now()) });
       out(r);
       return r.claimed ? 0 : 3;
     }

@@ -12,7 +12,7 @@ process.env.USAGE_HANDOFF_HOME = HOME;
 const {
   MESSAGED_STALE_MS, STALE_CLAIM_MS, cacheTtlMs, cachedWindows, claimResume, decide, handoffSlug, hasTranscript,
   hookEnabled, hookMessage, hookPlan, isPending, launchCommand, listHandoffs, markResumed, openSessions, pace,
-  parseHandoff, parseWindows, resumePrompt, skeleton, stalePending,
+  parseHandoff, parseWindows, resolveClaude, RESUMER_TOOLS, resumerCommand, resumePrompt, skeleton, stalePending,
 } = await skillModule("usage-handoff", "scripts/usage.mjs");
 
 const SCRIPT = skillFile("usage-handoff", "scripts", "usage.mjs");
@@ -95,7 +95,7 @@ test("handoff files are read from their header lines and marked resumed in place
 test("only one session resumes per reset; the waker's claim hands over to the session it starts", () => {
   const state = { resumeAt: at(T0) };
   assert.equal(claimResume("waker", state, T0).claimed, true);
-  assert.equal(claimResume("waker", state, T0 + MIN).claimed, true, "the same claimer may retry");
+  assert.equal(claimResume("waker", state, T0 + MIN).claimed, false, "a second waker never starts a second resume session");
   const taken = claimResume("resumer-1", state, T0 + 2 * MIN);
   assert.deepEqual([taken.claimed, taken.tookOverFrom], [true, "waker"]);
   assert.deepEqual(claimResume("watcher", state, T0 + 3 * MIN), { claimed: false, by: "resumer-1" });
@@ -115,17 +115,18 @@ test("closed sessions reopen in a new terminal in the handoff's folder, on every
   const prompt = resumePrompt("C:/h/peer a.md");
   assert.doesNotMatch(prompt, /["`$;&|<>^%!]/, "safe for cmd, wt and sh quoting");
   const none = () => false;
-  const win = launchCommand({ platform: "win32", cwd: "C:/work/repo a", prompt, has: none });
+  const claude = "claude";
+  const win = launchCommand({ platform: "win32", cwd: "C:/work/repo a", prompt, has: none, claude });
   assert.equal(win.cmd, "cmd.exe");
-  assert.match(win.args[0], /^\/c start "claude resume" \/D "C:\\work\\repo a" cmd \/k claude "Resume from/);
-  const wt = launchCommand({ platform: "win32", cwd: "C:/work/repo", prompt, has: (n) => n === "wt.exe" });
-  assert.deepEqual(wt.args.slice(0, 7), ["-w", "new", "-d", "C:\\work\\repo", "cmd", "/k", "claude"]);
-  const mac = launchCommand({ platform: "darwin", cwd: "/Users/lee/it's", prompt, has: none });
+  assert.match(win.args[0], /^\/c start "claude resume" \/D "C:\\work\\repo a" cmd \/c call "claude" "Resume from/);
+  const wt = launchCommand({ platform: "win32", cwd: "C:/work/repo", prompt, has: (n) => n === "wt.exe", claude });
+  assert.deepEqual(wt.args.slice(0, 8), ["-w", "new", "-d", "C:\\work\\repo", "cmd", "/c", "call", "claude"]);
+  const mac = launchCommand({ platform: "darwin", cwd: "/Users/lee/it's", prompt, has: none, claude });
   assert.equal(mac.cmd, "osascript");
-  assert.match(mac.args[1], /^tell application "Terminal" to do script "cd '\/Users\/lee\/it'\\\\''s' && claude 'Resume/);
-  const linux = launchCommand({ platform: "linux", cwd: "/w", prompt, has: (n) => n === "gnome-terminal" });
+  assert.match(mac.args[1], /^tell application "Terminal" to do script "cd '\/Users\/lee\/it'\\\\''s' && 'claude' 'Resume/);
+  const linux = launchCommand({ platform: "linux", cwd: "/w", prompt, has: (n) => n === "gnome-terminal", claude });
   assert.deepEqual(linux.args.slice(0, 3), ["--", "bash", "-lc"]);
-  assert.equal(launchCommand({ platform: "linux", cwd: "/w", prompt, has: none }), null);
+  assert.equal(launchCommand({ platform: "linux", cwd: "/w", prompt, has: none, claude }), null);
 });
 
 test("end to end: 97% asks for handoffs, the waker wakes after the reset and starts the resume", async () => {
@@ -137,6 +138,9 @@ test("end to end: 97% asks for handoffs, the waker wakes after the reset and sta
   assert.equal(check.action, "handoff");
   assert.equal(check.handoffDir, path.join(HOME, "handoffs").replace(/\\/g, "/"));
 
+  // One session is still waiting to resume.
+  rmSync(path.join(HOME, "handoffs"), { recursive: true, force: true });
+  handoff("e2e-peer");
   // Pretend the reset was five minutes ago and usage is low again.
   writeFileSync(fixture, JSON.stringify(usage(2)));
   const marked = JSON.parse(cli(["mark-handoff", "--resume-at", at(Date.now() - 5 * MIN), "--session", "watcher", "--cwd", HOME], env));
@@ -144,10 +148,10 @@ test("end to end: 97% asks for handoffs, the waker wakes after the reset and sta
   assert.ok(marked.waker.pid > 0);
 
   const log = path.join(HOME, "waker.log");
-  for (let i = 0; i < 60 && !(existsSync(log) && /started a resume session/.test(readFileSync(log, "utf8"))); i++) {
+  for (let i = 0; i < 60 && !(existsSync(log) && /started a hidden resume session/.test(readFileSync(log, "utf8"))); i++) {
     await new Promise((r) => setTimeout(r, 500));
   }
-  assert.match(readFileSync(log, "utf8"), /started a resume session in .* claude/);
+  assert.match(readFileSync(log, "utf8"), /started a hidden resume session for 1 handoff\(s\) in .*claude\S* -p /);
   assert.equal(JSON.parse(cli(["status"], env)).phase, "resuming");
   // The session the waker started takes over the claim, resumes and goes back to watching.
   assert.match(cli(["claim-resume", "--by", "resumer"], env), /"tookOverFrom": "waker"/);
@@ -258,10 +262,10 @@ test("open sessions are messaged, closed ones reopen with claude --resume", () =
   assert.equal(hasTranscript("gone-1", path.join(cfg, "projects")), true);
   assert.equal(hasTranscript("../x", path.join(cfg, "projects")), false);
 
-  const win = launchCommand({ platform: "win32", cwd: "C:/work/repo", prompt: "go", resumeId: "gone-1", has: () => false });
-  assert.match(win.args[0], /cmd \/k claude --resume gone-1 "go"$/);
-  const mac = launchCommand({ platform: "darwin", cwd: "/w", prompt: "go", resumeId: "gone-1", has: () => false });
-  assert.match(mac.args[1], /claude --resume gone-1 'go'/);
+  const win = launchCommand({ platform: "win32", cwd: "C:/work/repo", prompt: "go", resumeId: "gone-1", has: () => false, claude: "claude" });
+  assert.match(win.args[0], /cmd \/c call "claude" --resume gone-1 "go"$/);
+  const mac = launchCommand({ platform: "darwin", cwd: "/w", prompt: "go", resumeId: "gone-1", has: () => false, claude: "claude" });
+  assert.match(mac.args[1], /'claude' --resume gone-1 'go'/);
 
   // The CLI: a session that is still open is refused; a closed one is reopened by its id.
   const env = { CLAUDE_CONFIG_DIR: cfg };
@@ -275,4 +279,85 @@ test("open sessions are messaged, closed ones reopen with claude --resume", () =
   assert.equal(JSON.parse(cli(["launch", goneFile, "--dry-run"], env)).resumed, "gone-1");
   const pending = JSON.parse(cli(["pending"], env)).filter((h) => ["open-1", "gone-1"].includes(h.sessionid));
   assert.deepEqual(pending.map((h) => [h.sessionid, h.open, h.canReopen]).sort(), [["gone-1", false, true], ["open-1", true, false]]);
+});
+
+// ---- resuming without extra windows ----
+
+test("the resume session runs hidden with only the tools it needs, and new windows close when claude exits", () => {
+  // The usual Windows install is claude.exe: started directly, no shell, no window.
+  const exe = resumerCommand({ platform: "win32", claude: "C:\\u\\.local\\bin\\claude.exe" });
+  assert.equal(exe.cmd, "C:\\u\\.local\\bin\\claude.exe");
+  assert.deepEqual(exe.args, ["-p", exe.args[1], "--allowedTools", RESUMER_TOOLS, "--max-turns", "40"]);
+  assert.equal(RESUMER_TOOLS, "Skill,ToolSearch,ListAgents,SendMessage,Read,Bash(node:*),PowerShell(node:*)");
+  assert.match(exe.args[1], /^Claude usage has reset\./);
+  // An npm .cmd shim needs cmd.exe; `call` keeps the quoted path intact.
+  const shim = resumerCommand({ platform: "win32", claude: "C:\\npm\\claude.cmd" });
+  assert.equal(shim.cmd, "cmd.exe");
+  assert.match(shim.args[0], /^\/d \/c call "C:\\npm\\claude\.cmd" -p "Claude usage has reset\. .*" --allowedTools ".*" --max-turns 40$/);
+  assert.equal(resumerCommand({ platform: "linux", claude: "/usr/local/bin/claude" }).cmd, "/usr/local/bin/claude");
+
+  // Windows that do open (closed sessions) end with that claude: no cmd /k or exec bash left behind.
+  const prompt = "go";
+  const claude = "C:\\u\\claude.exe";
+  assert.match(launchCommand({ platform: "win32", cwd: "C:/w", prompt, claude, has: () => false }).args[0], / cmd \/c call "C:\\u\\claude\.exe" "go"$/);
+  assert.deepEqual(launchCommand({ platform: "win32", cwd: "C:/w", prompt, claude, has: (n) => n === "wt.exe" }).args.slice(4, 8), ["cmd", "/c", "call", claude]);
+  assert.equal(launchCommand({ platform: "linux", cwd: "/w", prompt, claude: "/bin/claude", has: (n) => n === "xterm" }).args.at(-1), "cd '/w' && '/bin/claude' 'go'");
+});
+
+test("claude is found by its full path, not left to a long PATH", () => {
+  const none = () => [];
+  assert.equal(resolveClaude({ env: { USAGE_HANDOFF_CLAUDE: "/x/claude" } }), "/x/claude");
+  assert.equal(resolveClaude({ env: {}, platform: "win32", which: () => ["C:\\npm\\claude.cmd", "C:\\u\\.local\\bin\\claude.exe"] }), "C:\\u\\.local\\bin\\claude.exe", "the .exe beats an npm shim");
+  assert.equal(resolveClaude({ env: {}, platform: "win32", which: () => ["C:\\npm\\claude.cmd"] }), "C:\\npm\\claude.cmd");
+  const home = "C:\\Users\\lee";
+  assert.equal(resolveClaude({ env: { USERPROFILE: home }, platform: "win32", which: none, exists: (p) => p === path.join(home, ".local", "bin", "claude.exe") }), path.join(home, ".local", "bin", "claude.exe"));
+  assert.equal(resolveClaude({ env: { HOME: "/home/lee" }, platform: "linux", which: none, exists: () => false }), "claude");
+});
+
+function waitForLog(re, ms = 30_000) {
+  const log = path.join(HOME, "waker.log");
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (existsSync(log) && re.test(readFileSync(log, "utf8"))) return true;
+    execFileSync(process.execPath, ["-e", "setTimeout(() => {}, 500)"]);
+  }
+  return false;
+}
+
+test("with no pending handoffs the waker starts nothing and goes back to watching", () => {
+  const fixture = path.join(HOME, "quiet-usage.json");
+  writeFileSync(fixture, JSON.stringify(usage(2)));
+  const env = { USAGE_HANDOFF_FIXTURE: fixture, USAGE_HANDOFF_DRY_LAUNCH: "1" };
+  cli(["reset"], env);
+  rmSync(path.join(HOME, "handoffs"), { recursive: true, force: true });
+  rmSync(path.join(HOME, "waker.log"), { force: true });
+  cli(["mark-handoff", "--resume-at", at(Date.now() - 5 * MIN), "--session", "watcher", "--cwd", HOME], env);
+  assert.ok(waitForLog(/no pending handoffs, nothing to start/), readFileSync(path.join(HOME, "waker.log"), "utf8"));
+  assert.doesNotMatch(readFileSync(path.join(HOME, "waker.log"), "utf8"), /started a hidden resume session/);
+  assert.equal(JSON.parse(cli(["status"], env)).phase, "watching");
+});
+
+test("once a resume is under way, hook calls don't start another waker", () => {
+  const fixture = path.join(HOME, "resuming-usage.json");
+  writeFileSync(fixture, JSON.stringify(usage(2)));
+  const env = { USAGE_HANDOFF_FIXTURE: fixture, USAGE_HANDOFF_DRY_LAUNCH: "1" };
+  rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+  const base = { phase: "resuming", threshold: 95, resumeAt: at(Date.now() - 5 * MIN), cwd: HOME, waker: { pid: 999999 } };
+  const hook = () => execFileSync(process.execPath, [SCRIPT, "--hook"], {
+    encoding: "utf8", input: JSON.stringify({ hook_event_name: "PostToolUse", session_id: "aaaa1111-x", cwd: HOME }),
+    env: { ...process.env, USAGE_HANDOFF_HOME: HOME, ...env },
+  });
+  writeFileSync(path.join(HOME, "state.json"), JSON.stringify({ ...base, resumingSince: at(Date.now() - MIN) }));
+  hook();
+  assert.equal(JSON.parse(cli(["status"], env)).waker.pid, 999999, "a fresh resume keeps its claim");
+  // A resume stuck for longer than a claim lasts gets a new waker.
+  writeFileSync(path.join(HOME, "state.json"), JSON.stringify({ ...base, resumingSince: at(Date.now() - STALE_CLAIM_MS - MIN) }));
+  hook();
+  const w = JSON.parse(cli(["status"], env)).waker;
+  try {
+    assert.notEqual(w.pid, 999999);
+  } finally {
+    try { process.kill(w.pid); } catch {}
+    cli(["reset"], env);
+  }
 });

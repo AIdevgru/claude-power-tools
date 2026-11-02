@@ -17,6 +17,16 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   `/usage-handoff off` (or `USAGE_HANDOFF_HOOK=off`) turns the hook off; `/loop /usage-handoff`
   adds a watcher session that also messages sessions without the hook.
 
+### Fixed
+
+- **usage-handoff resumes without extra windows.** The waker used to open a visible resumer
+  session, and a hook call could start a second waker that opened another one; both stayed open.
+  Now the resumer is a hidden `claude -p` (output in `~/.claude/usage-handoff/resumer.log`), it
+  starts only when a handoff is pending, a waker never re-takes a waker's claim, and the hook
+  restarts a waker only while waiting for the reset. Open sessions resume in their own window;
+  a closed session reopens in a window that closes when you exit it. The waker starts `claude` by
+  its full path (`USAGE_HANDOFF_CLAUDE` overrides), because `cmd.exe` can miss it in a long PATH.
+
 ## 0.6.0 (2026-10-31)
 
 Upgrading from 0.5? See "Upgrading from 0.5" in the README. The old `/update` can't follow the
