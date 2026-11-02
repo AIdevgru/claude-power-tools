@@ -4,7 +4,17 @@ All notable changes to claude-power-tools. Versions follow [semver](https://semv
 version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plugin.json`, which
 `npm test` keeps equal.
 
-## Unreleased
+## 0.7.0 (2026-11-02)
+
+Upgrading: run `/update --force` (or the installer) once; it removes the retired `ship-plan` skill.
+
+### Removed
+
+- **`ship-plan`**, deprecated in 0.6.0. Use `/implement-to-pr --review-plan --merge` (omit
+  `--merge` for the old `--no-merge`). The plugin no longer ships it, and on installer installs the
+  next installer run or `/update --force` removes it if the manifest records it: a linked skill's
+  link is removed, a copied one moves to `<target>/backups/claude-power-tools/<UTC>/`, and it
+  leaves `claude-power-tools.json`.
 
 ### Added
 

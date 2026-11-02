@@ -1,6 +1,6 @@
 {
   "name": "power-tools",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Run several Claude Code sessions on one repo: fleet manager, status board, PR dashboard, request inbox, task/ticket/plan-to-PR pipelines, PR combining and the git-guard hook.",
   "author": { "name": "aidevgru" },
   "repository": "https://github.com/aidevgru/claude-power-tools",

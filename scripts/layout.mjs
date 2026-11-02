@@ -28,6 +28,11 @@ export const PLUGINS = {
 // Installer-only skills, each its own group. Opt-in: not part of the default install or --all.
 export const EXTRAS = { graphify: "extras/graphify" };
 
+// Skills a release removed, and the command that replaces each. An install or /update run takes
+// a recorded one out of <target>/skills (a link is removed, a copy is backed up) and out of the
+// manifest. Keep an entry for a few releases, so installs that skip versions still get it.
+export const RETIRED = { "ship-plan": "implement-to-pr --review-plan --merge" };
+
 // The installer's --with groups, in install order. --all takes every plugin group, not extras.
 export const GROUPS = [...Object.values(PLUGINS).map((p) => p.group), ...Object.keys(EXTRAS)];
 

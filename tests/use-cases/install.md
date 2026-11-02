@@ -65,3 +65,12 @@ skills on her laptop.
     `--force` turns a working link into a copy the same way, so the manifest's
     `copy` mode is what is on disk. A recorded skill she didn't select keeps its
     stale link, and the installer names it and says to re-link with `--link`.
+13. 0.7.0 retired `ship-plan` (use `/implement-to-pr --review-plan --merge`).
+    Priya's manifest still records it, so her next installer run removes her
+    `ship-plan` link (the folder it pointed at is untouched), drops it from the
+    manifest and prints `remove retired skill ship-plan (use
+    /implement-to-pr --review-plan --merge)`. Her teammate's copied
+    `ship-plan` folder isn't deleted: it moves to
+    `~/.claude/backups/claude-power-tools/<UTC>/` like any replaced copy. A dry
+    run only reports it, and a `ship-plan` folder the manifest doesn't record
+    (her own skill of that name) is left alone.

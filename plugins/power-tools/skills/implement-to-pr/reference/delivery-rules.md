@@ -10,8 +10,6 @@ Shared by `implement-to-pr`, `finish-pr` and `ticket-to-pr`. Each of those skill
 | An existing PR or issue that needs finishing | `finish-pr` | a reviewed, green PR | never |
 | One tracker ticket (Jira or GitHub issue) | `ticket-to-pr` | a reviewed PR, then the owner picks merge or hold | asks the owner |
 
-`ship-plan` is a deprecated alias for `implement-to-pr --review-plan --merge` and will be removed in 0.7.0.
-
 ## Rules
 
 - **Repo rules win.** Read the repo's `CLAUDE.md` and `AGENTS.md` first, including any `## Power tools` section, and follow them: worktree isolation, tests and use-case stories, timestamp conventions, migration ordering, threat models, ticket tracking, draft-PR rules, inbox and ownership protocols.

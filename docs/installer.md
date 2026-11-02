@@ -27,7 +27,7 @@ The skills come in the same groups as the three plugins, plus graphify on its ow
 
 | Group | Same as plugin | Skills |
 |---|---|---|
-| `core` (default) | `power-tools` | fleet-manager, fleet-status, pr-dashboard, request-inbox, usage-handoff, implement-to-pr, finish-pr, ticket-to-pr, ticket-triage, issues-to-plan, combine-prs, drain-pr-queue, git-guard, update, ship-plan |
+| `core` (default) | `power-tools` | fleet-manager, fleet-status, pr-dashboard, request-inbox, usage-handoff, implement-to-pr, finish-pr, ticket-to-pr, ticket-triage, issues-to-plan, combine-prs, drain-pr-queue, git-guard, update |
 | `ui` | `power-tools-ui` | ux-mockup, ui-critique-loop, ui-finalize, impeccable (and its 4 subagents) |
 | `projects` | `power-tools-projects` | new-project, project, deploy |
 | `graphify` | none | graphify |
@@ -78,6 +78,14 @@ node <your clone>/scripts/install.mjs --link
 From 0.6 on, `/update --force` pulls and re-links by itself. Copied (non-`--link`) installs aren't
 affected by the move; to refresh them from 0.5, run `node scripts/install.mjs --force` with
 `--all` or the groups you had, from a fresh clone.
+
+## Retired skills
+
+When a release retires a skill (0.7.0 retired `ship-plan`; use `/implement-to-pr --review-plan --merge`),
+the next installer run or `/update --force` takes it out if the manifest records it: a linked
+skill's link is removed, a copied one moves to `~/.claude/backups/claude-power-tools/<UTC>/`, and
+it leaves the manifest. It prints `remove retired skill <name> (use /<replacement>)`. A folder of
+that name the manifest doesn't record isn't touched.
 
 ## Updating
 

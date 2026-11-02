@@ -205,6 +205,55 @@ test("a copy run never links: a selected stale link becomes a copy, a recorded o
   assert.equal(readManifest(dir).mode, "copy");
 });
 
+// A target whose manifest records ship-plan (retired in 0.7.0) next to fleet-status, with
+// ship-plan installed by `make(dest)`.
+function retiredTarget(make, mode) {
+  const dir = target();
+  mkdirSync(path.join(dir, "skills"));
+  make(path.join(dir, "skills", "ship-plan"));
+  writeFileSync(path.join(dir, MANIFEST), JSON.stringify({ name: "claude-power-tools", version: "0.6.0", mode, source: REPO, skills: ["fleet-status", "ship-plan"] }));
+  return dir;
+}
+
+test("a recorded retired skill is removed: a link is unlinked, a copy is backed up, both leave the manifest", () => {
+  // Linked: the link goes, the folder it pointed at stays.
+  const old = mkdtempSync(path.join(tmpdir(), "cpt-old-clone-"));
+  writeFileSync(path.join(old, "SKILL.md"), "0.6\n");
+  const linked = retiredTarget((dest) => linkDir(old, dest), "link");
+  const preview = install({ ...parseArgs(["--target", linked, "--skills", "fleet-status", "--no-hooks", "--link"]), dryRun: true }, quiet);
+  assert.deepEqual(preview.retired, ["ship-plan"]);
+  assert.ok(lstatSync(path.join(linked, "skills", "ship-plan")).isSymbolicLink(), "a dry run removes nothing");
+  const lines = [];
+  const r = install(parseArgs(["--target", linked, "--skills", "fleet-status", "--no-hooks", "--link"]), (l) => lines.push(l));
+  assert.deepEqual(r.retired, ["ship-plan"]);
+  assert.ok(!existsSync(path.join(linked, "skills", "ship-plan")) && !readdirSync(path.join(linked, "skills")).includes("ship-plan"), "the link is gone");
+  assert.ok(existsSync(path.join(old, "SKILL.md")), "what the link pointed at is untouched");
+  assert.deepEqual(r.backedUp, []);
+  assert.match(lines.join("\n"), /remove retired skill ship-plan \(use \/implement-to-pr --review-plan --merge\)/);
+  assert.deepEqual(readManifest(linked).skills, ["fleet-status"]);
+
+  // Copied: the real folder moves to the backups, never deleted. No --force and nothing to
+  // install (fleet-status isn't selected) still removes it and rewrites the manifest.
+  const copied = retiredTarget((dest) => {
+    mkdirSync(dest);
+    writeFileSync(path.join(dest, "SKILL.md"), "0.6 copy\n");
+  }, "copy");
+  const c = install(parseArgs(["--target", copied, "--skills", "", "--no-hooks"]), quiet);
+  assert.deepEqual(c.retired, ["ship-plan"]);
+  assert.ok(!existsSync(path.join(copied, "skills", "ship-plan")));
+  assert.equal(c.backedUp.length, 1);
+  assert.match(c.backedUp[0], /backups\/claude-power-tools\/[^/]+\/skills\/ship-plan$/);
+  assert.equal(readFileSync(path.join(c.backedUp[0], "SKILL.md"), "utf8"), "0.6 copy\n");
+  assert.deepEqual(readManifest(copied).skills, ["fleet-status"]);
+
+  // Not recorded: someone's own ship-plan folder is left alone.
+  const mine = target();
+  mkdirSync(path.join(mine, "skills", "ship-plan"), { recursive: true });
+  const n = install(parseArgs(["--target", mine, "--skills", "fleet-status", "--no-hooks"]), quiet);
+  assert.deepEqual(n.retired, []);
+  assert.ok(existsSync(path.join(mine, "skills", "ship-plan")));
+});
+
 test("--force in a copy run turns a working link into a copy, so the manifest's mode is what is on disk", () => {
   const dir = target();
   install(parseArgs(["--target", dir, "--skills", "fleet-status", "--no-hooks", "--link"]), quiet);

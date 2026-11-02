@@ -57,3 +57,9 @@ Priya installed the power tools a month ago and hears a new version is out.
 10. Priya upgraded the graphify CLI past the bundled skill, so graphify warns on
    every call. The doctor names both versions and tells her to run `/update`
    for a newer bundle (or, if none exists yet, the maintainer's vendor command). An older CLI gets the `uv tool upgrade graphifyy` line instead.
+11. A release can retire a skill: 0.7.0 retired `ship-plan`. `/update` reads
+    the new version's list of retired skills, says which of hers it will remove
+    and what replaces each (`use /implement-to-pr --review-plan --merge`), and
+    `--force` runs that version's installer, which removes them, even when
+    there is nothing else to update. A skill the new version simply no longer
+    ships is still left in place.

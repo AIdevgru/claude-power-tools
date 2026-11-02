@@ -187,7 +187,7 @@ Which one to use:
 | An existing PR to finish | `finish-pr` | Never |
 | One tracker ticket | `ticket-to-pr` | Asks you |
 
-All three share one rule set, including one UI gate (`reference/delivery-rules.md` in each skill). `ship-plan` is now `implement-to-pr --review-plan --merge`; the old name forwards there until 0.7.0.
+All three share one rule set, including one UI gate (`reference/delivery-rules.md` in each skill). `/ship-plan` was removed in 0.7.0; use `/implement-to-pr --review-plan --merge`.
 
 | Skill | What it does | Needs |
 |---|---|---|
