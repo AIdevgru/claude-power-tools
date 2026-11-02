@@ -4,6 +4,14 @@ All notable changes to claude-power-tools. Versions follow [semver](https://semv
 version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plugin.json`, which
 `npm test` keeps equal.
 
+## Unreleased
+
+### Changed
+
+- **The usage status line shows each window's own reset**: `5h 68% (resets 05:10 EST) · week 23%
+  (resets Sun 16:00 EST)`. Before, one reset time followed both windows, so it wasn't clear which
+  one it belonged to.
+
 ## 0.7.0 (2026-11-02)
 
 Upgrading: run `/update --force` (or the installer) once; it removes the retired `ship-plan` skill.

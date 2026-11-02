@@ -67,7 +67,8 @@ subscription with a 5-hour usage window.
    but it lists leftovers in the real state folder, such as an old resume claim, which the next
    `finish-resume` or `reset` removes.
 2. Lee wants to see the limit coming, so they run `/usage-handoff statusline` and, after saying
-   yes, get a status line like `5h 64% · week 49% · resets 00:10 EST`. It reads the reading the
+   yes, get a status line like `5h 64% (resets 00:10 EST) · week 49% (resets Sun 16:00 EST)`: each
+   window carries its own reset, as a weekday when it's later this week. It reads the reading the
    hooks already share, so it never calls the usage endpoint. While handing off it says
    `handing off, back 00:10 EST`; a reading older than 15 minutes says how old it is.
 3. The hook doesn't run after Read, Grep, Glob and other quick lookups. Each hook call costs a

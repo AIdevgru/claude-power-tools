@@ -576,16 +576,27 @@ export async function runHook(raw, now = Date.now()) {
 
 const WINDOW_LABELS = { five_hour: "5h", seven_day: "week" };
 
+// localTime, shorter for the status line: "00:10 EST" today, "Sun 19:00 EST" within the week.
+export function shortLocalTime(ms, now = Date.now()) {
+  const full = localTime(ms, now);
+  if (!full || ms - now >= 7 * 86_400_000 || new Date(ms).toDateString() === new Date(now).toDateString()) return full;
+  try {
+    return `${new Date(ms).toLocaleDateString("en-US", { weekday: "short" })} ${full.split(" ").slice(-2).join(" ")}`;
+  } catch { return full; }
+}
+
 // One short line for Claude Code's status line, from the shared cache only (no API call):
-// "5h 64% · week 49% · resets 00:10 EST".
+// "5h 64% (resets 00:10 EST) · week 49% (resets Sun 19:00 EST)". Each window carries its own
+// reset, so it's clear which one resets when.
 export function statusText({ cache, state = {}, now = Date.now() }) {
   const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number");
   if (!windows.length) return "usage: no reading yet";
-  const parts = windows.map((w) => `${WINDOW_LABELS[w.name] ?? w.name.replace(/_/g, "-")} ${Math.round(w.pct)}%`);
-  const top = windows.reduce((a, b) => (b.pct > a.pct ? b : a));
-  if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${localTime(state.resumeAt, now)}`);
+  const parts = windows.map((w) => {
+    const label = `${WINDOW_LABELS[w.name] ?? w.name.replace(/_/g, "-")} ${Math.round(w.pct)}%`;
+    return w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label;
+  });
+  if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
   else if (state.phase === "resuming") parts.push("resuming");
-  else if (top.resetsAt && top.resetsAt > now) parts.push(`resets ${localTime(top.resetsAt, now)}`);
   const ageMin = cache.at ? Math.round((now - cache.at) / 60_000) : null;
   if (ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
   return parts.join(" · ");

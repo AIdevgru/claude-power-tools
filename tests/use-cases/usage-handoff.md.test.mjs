@@ -386,8 +386,16 @@ test("once a resume is under way, hook calls don't start another waker", () => {
 test("the status line shows each window, the reset in local time, the handoff and an old reading", () => {
   const { statusText } = mod;
   const cache = { at: T0, windows: [{ name: "five_hour", pct: 64.4, resetsAt: T0 + 30 * MIN }, { name: "seven_day", pct: 49, resetsAt: T0 + 3 * 24 * 60 * MIN }] };
-  assert.equal(statusText({ cache, now: T0 }), `5h 64% · week 49% · resets ${mod.localTime(T0 + 30 * MIN, T0)}`);
-  assert.equal(statusText({ cache, state: { phase: "handoff", resumeAt: "2026-11-01T20:30:00Z" }, now: T0 }), `5h 64% · week 49% · handing off, back ${mod.localTime(T0 + 30 * MIN, T0)}`);
+  const soon = mod.localTime(T0 + 30 * MIN, T0);
+  const later = T0 + 3 * 24 * 60 * MIN;
+  const weekday = new Date(later).toLocaleDateString("en-US", { weekday: "short" });
+  const laterTime = mod.localTime(later, T0).split(" ").slice(-2).join(" ");
+  assert.equal(mod.shortLocalTime(later, T0), `${weekday} ${laterTime}`);
+  assert.equal(mod.shortLocalTime(T0 + 30 * MIN, T0), soon);
+  assert.equal(mod.shortLocalTime(T0 + 8 * 24 * 60 * MIN, T0), mod.localTime(T0 + 8 * 24 * 60 * MIN, T0), "a week or more away keeps the date");
+  assert.equal(statusText({ cache, now: T0 }), `5h 64% (resets ${soon}) · week 49% (resets ${weekday} ${laterTime})`);
+  assert.equal(statusText({ cache, state: { phase: "handoff", resumeAt: "2026-11-01T20:30:00Z" }, now: T0 }), `5h 64% (resets ${soon}) · week 49% (resets ${weekday} ${laterTime}) · handing off, back ${soon}`);
+  assert.equal(statusText({ cache: { at: T0, windows: [{ name: "five_hour", pct: 3, resetsAt: T0 - MIN }] }, now: T0 }), "5h 3%", "a passed reset isn't shown");
   assert.match(statusText({ cache, now: T0 + 20 * MIN }), /· 20 min old$/);
   assert.equal(statusText({ cache: null }), "usage: no reading yet");
 });
