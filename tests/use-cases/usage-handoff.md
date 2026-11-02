@@ -56,3 +56,20 @@ subscription with a 5-hour usage window.
    shows up as `stalePending`, and the next tick opens a new session for it.
 8. If the usage endpoint can't be read (logged out, expired token, network), the tick says
    `unknown` with the reason instead of guessing.
+
+## Checking it works, and seeing it
+
+1. Before trusting it with a real limit, Lee runs `/usage-handoff rehearse`. In about ten seconds
+   it plays the whole cycle in a scratch folder with made-up usage: at 96% the note, the
+   handoff and the waker; the same session isn't told twice; a subagent gets its short note;
+   after the reset one hidden resume session (not really started); only one waker; then back to
+   watching with the claim removed. Each step prints `ok` or `FAIL`. Nothing real is touched,
+   but it lists leftovers in the real state folder, such as an old resume claim, which the next
+   `finish-resume` or `reset` removes.
+2. Lee wants to see the limit coming, so they run `/usage-handoff statusline` and, after saying
+   yes, get a status line like `5h 64% · week 49% · resets 00:10 EST`. It reads the reading the
+   hooks already share, so it never calls the usage endpoint. While handing off it says
+   `handing off, back 00:10 EST`; a reading older than 15 minutes says how old it is.
+3. The hook doesn't run after Read, Grep, Glob and other quick lookups. Each hook call costs a
+   Node start, and those tools run most often; any prompt, command, edit, subagent, skill or MCP
+   call still checks usage.

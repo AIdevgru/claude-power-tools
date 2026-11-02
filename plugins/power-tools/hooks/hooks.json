@@ -66,6 +66,7 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit|Agent|Task|Skill|WebFetch|WebSearch|SendMessage|mcp__.*",
         "hooks": [
           {
             "type": "command",

@@ -3,7 +3,7 @@ name: usage-handoff
 description: "Watches Claude usage limits (a hook, on by default). Near the top (95%) every session and subagent writes a handoff and stops; after the reset the work restarts from those handoffs. `/usage-handoff off` turns it off. Trigger on 'watch my usage' or 'hand off before the limit'."
 user-invocable: true
 disable-model-invocation: false
-argument-hint: "[check | resume | status | on | off | reset] [--threshold N]  (default: check, threshold 95)"
+argument-hint: "[check | resume | status | on | off | reset | rehearse | statusline] [--threshold N]  (default: check, threshold 95)"
 allowed-tools: ListAgents, SendMessage, ToolSearch, Bash, Read, Write, ScheduleWakeup
 ---
 
@@ -23,7 +23,11 @@ Claude subscription usage has a 5-hour window and a weekly window. When either f
 - **`resume`**: run "Resume" now, even if no reset is due. The background waker starts a hidden `claude -p` session with this request. When you are that hidden session, there is nobody to talk to: do the steps and end with the report, which goes to `resumer.log`.
 - **`status`**: print `USAGE status` as a short summary (phase, reset time, waker alive, pending handoffs). No other action.
 - **`on`** / **`off`**: `USAGE hook on` or `USAGE hook off`, then print its one-line answer. Switches the hook for every session on this machine. Only the owner can ask for this, in their own message.
-- **`reset`**: `USAGE reset`. Back to watching; existing handoff files stay.
+- **`reset`**: `USAGE reset`. Back to watching; existing handoff files stay. Old resume claims are removed.
+- **`rehearse`**: `USAGE rehearse`. Runs the whole cycle in a scratch folder with made-up usage (96%, the note, the handoff, the waker, the reset, the hidden resume, back to watching) in about 10 seconds, without touching real sessions or starting Claude. Print its lines as they are. Its `note` lines are leftovers in the real state folder.
+- **`statusline`**: show the owner how to put usage in Claude Code's status line. Run `USAGE paths` and take its `script` path, then print this snippet for `~/.claude/settings.json` with that path, and ask before editing their settings (an existing `statusLine` would be replaced):
+  `"statusLine": { "type": "command", "command": "node \"<script>\" statusline" }`
+  It prints e.g. `5h 64% · week 49% · resets 00:10 EST` from the hooks' shared reading, with no extra call to the usage endpoint. A plugin install's path changes with each version; a linked install's (`~/.claude/skills/usage-handoff/scripts`) doesn't.
 - **`--threshold N`**: the percentage that triggers handoffs (default 95). It's saved, so later ticks keep it.
 
 ## The hook

@@ -1,7 +1,7 @@
 // Use case: tests/use-cases/usage-handoff.md
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -14,6 +14,7 @@ const {
   hookEnabled, hookMessage, hookPlan, isPending, launchCommand, listHandoffs, localTime, markResumed, openSessions, pace,
   parseHandoff, parseWindows, resolveClaude, RESUMER_TOOLS, resumerCommand, resumePrompt, skeleton, stalePending,
 } = await skillModule("usage-handoff", "scripts/usage.mjs");
+const mod = await skillModule("usage-handoff", "scripts/usage.mjs");
 
 const SCRIPT = skillFile("usage-handoff", "scripts", "usage.mjs");
 const T0 = Date.UTC(2026, 10, 1, 20, 0, 0);
@@ -380,4 +381,44 @@ test("once a resume is under way, hook calls don't start another waker", () => {
     try { process.kill(w.pid); } catch {}
     cli(["reset"], env);
   }
+});
+
+test("the status line shows each window, the reset in local time, the handoff and an old reading", () => {
+  const { statusText } = mod;
+  const cache = { at: T0, windows: [{ name: "five_hour", pct: 64.4, resetsAt: T0 + 30 * MIN }, { name: "seven_day", pct: 49, resetsAt: T0 + 3 * 24 * 60 * MIN }] };
+  assert.equal(statusText({ cache, now: T0 }), `5h 64% · week 49% · resets ${mod.localTime(T0 + 30 * MIN, T0)}`);
+  assert.equal(statusText({ cache, state: { phase: "handoff", resumeAt: "2026-11-01T20:30:00Z" }, now: T0 }), `5h 64% · week 49% · handing off, back ${mod.localTime(T0 + 30 * MIN, T0)}`);
+  assert.match(statusText({ cache, now: T0 + 20 * MIN }), /· 20 min old$/);
+  assert.equal(statusText({ cache: null }), "usage: no reading yet");
+});
+
+test("old resume claims are found and removed by reset", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "usage-locks-"));
+  writeFileSync(path.join(dir, "resume-2026-11-01T200000Z.lock"), "{}");
+  writeFileSync(path.join(dir, "resume-2026-11-02T051000Z.lock"), "{}");
+  const names = (state) => mod.staleLocks(state, dir).map((f) => path.basename(f));
+  assert.deepEqual(names({ phase: "resuming", resumeAt: "2026-11-02T05:10:00Z" }), ["resume-2026-11-01T200000Z.lock"]);
+  assert.equal(names({ phase: "watching" }).length, 2);
+  const env = { USAGE_HANDOFF_HOME: dir };
+  cli(["reset"], env);
+  assert.deepEqual(readdirSync(dir).filter((n) => n.endsWith(".lock")), []);
+});
+
+test("rehearse plays the whole cycle in a scratch folder and passes", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "usage-real-"));
+  const outText = cli(["rehearse"], { USAGE_HANDOFF_HOME: dir });
+  assert.doesNotMatch(outText, /FAIL/);
+  assert.match(outText, /after the reset the waker starts one hidden resume session/);
+  assert.match(outText, /only one waker ran \(1\)/);
+  assert.match(outText, /rehearsal passed$/m);
+  assert.deepEqual(readdirSync(dir), [], "the real state folder is untouched");
+});
+
+test("the usage hook skips quick lookups after a tool call but checks everything else", () => {
+  const hooks = JSON.parse(readFileSync(path.join(path.dirname(skillFile("usage-handoff", "SKILL.md")), "..", "..", "hooks", "hooks.json"), "utf8"));
+  const group = hooks.hooks.PostToolUse.find((g) => g.hooks.some((h) => h.command.includes("usage.mjs")));
+  const re = new RegExp(`^(?:${group.matcher})$`);
+  for (const t of ["Bash", "PowerShell", "Edit", "Write", "Agent", "Skill", "SendMessage", "mcp__github__create_pr"]) assert.ok(re.test(t), t);
+  for (const t of ["Read", "Grep", "Glob", "ToolSearch"]) assert.ok(!re.test(t), t);
+  assert.ok(hooks.hooks.UserPromptSubmit.some((g) => !g.matcher && g.hooks.some((h) => h.command.includes("usage.mjs"))));
 });

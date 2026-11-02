@@ -15,7 +15,9 @@
 //   launch FILE [--dry-run]      Open a new terminal running `claude` that resumes from FILE.
 //   wake                         (background) sleep until the reset, then start a resume session.
 //   hook on|off|status           Switch the hook below on or off for every session (default on).
-//   status | reset | paths
+//   status | reset | paths   reset (and finish-resume) also remove old resume claims.
+//   rehearse                     Run the whole cycle in a scratch folder with made-up usage; exit 1 on a failure.
+//   statusline                   One line for Claude Code's status line, from the cached reading.
 //
 //   --hook                       Hook mode (UserPromptSubmit, PostToolUse): reads hook JSON on stdin.
 //                                Reads usage from a shared cache (refreshed every 1-10 minutes,
@@ -35,8 +37,8 @@
 // failure is reported as action "unknown" instead of guessed.
 
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, appendFileSync, openSync, closeSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, closeSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -405,6 +407,21 @@ export function armWaker(state) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// USAGE_HANDOFF_GRACE_S shortens the wait after the reset (rehearse uses 1 second).
+const graceS = () => {
+  const v = process.env.USAGE_HANDOFF_GRACE_S;
+  return v && Number(v) >= 0 ? Number(v) : WAKER_GRACE_S;
+};
+
+// Resume claims from earlier resets. finish-resume and reset remove them.
+export function staleLocks(state = readState(), dir = home()) {
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => /^resume-.*\.lock$/.test(n)); } catch {}
+  const current = `resume-${String(state.resumeAt ?? "now").replace(/[^\w-]/g, "")}.lock`;
+  return names.filter((n) => state.phase === "watching" || n !== current).map((n) => path.join(dir, n));
+}
+const clearLocks = (state) => { for (const f of staleLocks(state)) rmSync(f, { force: true }); };
+
 // Background process: wait for the reset, then start one Claude session that runs the resume.
 async function wake() {
   log(`waker ${process.pid} started`);
@@ -413,7 +430,7 @@ async function wake() {
     const state = readState();
     if (state.phase === "watching" || state.waker?.pid !== process.pid) return log(`waker ${process.pid}: not needed any more, exiting`);
     const resumeAt = Date.parse(state.resumeAt) || Date.now();
-    const wait = resumeAt + WAKER_GRACE_S * 1000 - Date.now();
+    const wait = resumeAt + graceS() * 1000 - Date.now();
     if (wait > 0) {
       await sleep(Math.min(wait, 10 * 60_000));
       continue;
@@ -555,6 +572,95 @@ export async function runHook(raw, now = Date.now()) {
   return { hookSpecificOutput: { hookEventName: event, additionalContext: hookMessage(plan, file) } };
 }
 
+// ---- status line ----
+
+const WINDOW_LABELS = { five_hour: "5h", seven_day: "week" };
+
+// One short line for Claude Code's status line, from the shared cache only (no API call):
+// "5h 64% · week 49% · resets 00:10 EST".
+export function statusText({ cache, state = {}, now = Date.now() }) {
+  const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number");
+  if (!windows.length) return "usage: no reading yet";
+  const parts = windows.map((w) => `${WINDOW_LABELS[w.name] ?? w.name.replace(/_/g, "-")} ${Math.round(w.pct)}%`);
+  const top = windows.reduce((a, b) => (b.pct > a.pct ? b : a));
+  if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${localTime(state.resumeAt, now)}`);
+  else if (state.phase === "resuming") parts.push("resuming");
+  else if (top.resetsAt && top.resetsAt > now) parts.push(`resets ${localTime(top.resetsAt, now)}`);
+  const ageMin = cache.at ? Math.round((now - cache.at) / 60_000) : null;
+  if (ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
+  return parts.join(" · ");
+}
+
+// ---- rehearse ----
+
+// Runs the whole cycle in a scratch folder with made-up usage: 96% → the hook's note, handoff and
+// waker → the reset → the hidden resume (not really started) → back to watching. Nothing real is
+// touched; at the end it lists leftovers in the real state folder.
+async function rehearse() {
+  const scratch = mkdtempSync(path.join(tmpdir(), "usage-rehearse-"));
+  const work = path.join(scratch, "work");
+  const fixture = path.join(scratch, "usage.json");
+  const rhome = path.join(scratch, "home");
+  mkdirSync(work, { recursive: true });
+  const env = {
+    ...process.env, USAGE_HANDOFF_HOME: rhome, USAGE_HANDOFF_FIXTURE: fixture, USAGE_HANDOFF_DRY_LAUNCH: "1",
+    USAGE_HANDOFF_GRACE_S: "1", CLAUDE_CONFIG_DIR: path.join(scratch, "claude"),
+  };
+  delete env.USAGE_HANDOFF_HOOK;
+  delete env.USAGE_HANDOFF_CMD;
+  const run = (args, input = "") => execFileSync(process.execPath, [SCRIPT, ...args], { env, input, encoding: "utf8", cwd: work });
+  const hook = (extra) => run(["--hook"], JSON.stringify({ hook_event_name: "PostToolUse", session_id: "rehearse-aaaa1111", cwd: work, tool_name: "Bash", ...extra }));
+  const read = (name) => { try { return readFileSync(path.join(rhome, name), "utf8"); } catch { return ""; } };
+  const state = () => { try { return JSON.parse(read("state.json")); } catch { return {}; } };
+  const wakers = () => (read("waker.log").match(/waker \d+ started/g) ?? []).length;
+  const results = [];
+  const step = (ok, text) => { results.push(ok); console.log(`${ok ? "ok  " : "FAIL"} ${text}`); };
+  const usage = (pct, resetAt) => writeFileSync(fixture, JSON.stringify({
+    five_hour: { utilization: pct, resets_at: iso(resetAt) }, seven_day: { utilization: 40, resets_at: iso(resetAt + 3 * 86_400_000) },
+  }));
+
+  try {
+    const resetAt = Date.now() + 4000;
+    usage(96, resetAt);
+    const note = hook();
+    step(/Wrap up before it runs out/.test(note), "at 96% the hook tells the session to wrap up");
+    step(note.includes(`resets ${localTime(resetAt)}`), `the note gives the reset in local time (${localTime(resetAt)})`);
+    const hdir = path.join(rhome, "handoffs");
+    const handoffs = existsSync(hdir) ? readdirSync(hdir) : [];
+    const text = handoffs[0] ? readFileSync(path.join(hdir, handoffs[0]), "utf8") : "";
+    step(handoffs.length === 1 && /^Status: pending$/m.test(text), "the hook wrote one pending handoff");
+    step(/^Resets: \S+Z \(.+\)$/m.test(text), "the handoff's Resets line carries the local time");
+    step(hook() === "", "the same session isn't told twice");
+    step(/report for your parent session/.test(hook({ agent_id: "sub-1" })), "a subagent gets its own short note");
+    step(state().phase === "handoff" && !!state().waker?.pid, "the state says handoff and a waker is armed");
+
+    usage(5, resetAt + 5 * 3_600_000); // after the reset the window is nearly empty
+    const until = Date.now() + 30_000;
+    while (Date.now() < until && !/hidden resume session|could not start/.test(read("waker.log"))) await sleep(500);
+    const log = read("waker.log");
+    step(/started a hidden resume session for 1 handoff\(s\)/.test(log), "after the reset the waker starts one hidden resume session");
+    step(state().phase === "resuming", "the state says resuming");
+    hook({ session_id: "rehearse-bbbb2222" });
+    await sleep(1500);
+    step(wakers() === 1, `only one waker ran (${wakers()})`);
+    run(["finish-resume"]);
+    step(state().phase === "watching" && !readdirSync(rhome).some((n) => n.endsWith(".lock")), "finish-resume goes back to watching and removes the claim");
+  } catch (e) {
+    step(false, `the rehearsal stopped: ${e.message.split("\n")[0]}`);
+  } finally {
+    try { rmSync(scratch, { recursive: true, force: true }); } catch {}
+  }
+
+  // Leftovers in the real state folder.
+  const real = readState();
+  const locks = staleLocks(real);
+  if (locks.length) console.log(`note ${locks.length} old resume claim(s) in ${fwd(home())}; the next finish-resume or reset removes them`);
+  if (real.phase === "handoff" && real.waker?.pid && !alive(real.waker.pid)) console.log("note the real waker isn't running; the next hook call after the reset starts one");
+  const passed = results.every(Boolean);
+  console.log(passed ? "rehearsal passed" : "rehearsal FAILED");
+  return passed ? 0 : 1;
+}
+
 function flag(args, name, fallback) {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
@@ -638,6 +744,7 @@ async function main(argv) {
       return out(`resumed: ${fwd(args[0])}`);
     case "finish-resume":
       writeState({ phase: "watching", threshold: state.threshold, lastResumeAt: iso(Date.now()), messaged: state.messaged ?? {} });
+      clearLocks({ phase: "watching" });
       return out("watching");
     case "launch": {
       const file = args.find((a) => !a.startsWith("--"));
@@ -656,9 +763,18 @@ async function main(argv) {
       return out({ ...state, ...(state.resumeAt ? { resumeAtLocal: localTime(state.resumeAt) } : {}), waker: state.waker ? { ...state.waker, alive: alive(state.waker.pid) } : null, handoffDir: fwd(handoffDir()) });
     case "reset":
       writeState({ phase: "watching", threshold: state.threshold });
+      clearLocks({ phase: "watching" });
       return out("reset: watching");
+    case "statusline": {
+      // A status line command gets session JSON on stdin; this line needs none of it.
+      let cache = null;
+      try { cache = JSON.parse(readFileSync(cacheFile(), "utf8")); } catch {}
+      return out(statusText({ cache, state }));
+    }
+    case "rehearse":
+      return rehearse();
     case "paths":
-      return out({ home: fwd(home()), handoffs: fwd(handoffDir()), log: fwd(logFile()) });
+      return out({ home: fwd(home()), handoffs: fwd(handoffDir()), log: fwd(logFile()), script: fwd(SCRIPT) });
     default:
       console.error(`unknown command: ${cmd}`);
       return 2;
