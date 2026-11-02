@@ -15,9 +15,13 @@ subscription with a 5-hour usage window.
    Neither hears it twice in the same window.
 3. The first session to cross the threshold records the reset time and starts the background
    waker.
-4. After the reset the waker starts a Claude session that runs `/usage-handoff resume`. Sessions
-   still open are messaged to resume; a closed one reopens with `claude --resume <its id>`, so it
-   comes back with its whole conversation, even if it ran out before writing anything. `launch`
+4. After the reset, if any handoff is still pending, the waker starts one hidden Claude session
+   (`claude -p`, no window, output in `resumer.log`) that runs `/usage-handoff resume`. Sessions
+   still open are messaged and resume in their own window, so no new window appears for them; a closed one reopens with `claude --resume <its id>`, so it
+   comes back with its whole conversation, even if it ran out before writing anything. That window
+   closes by itself when Lee exits Claude. Only one hidden session ever starts per reset: a second
+   waker can't re-take the first one's claim, and the hook won't start a waker once a resume is
+   under way. With no pending handoffs, the waker starts nothing. `launch`
    won't reopen a session that is still open.
    If the machine rebooted while waiting, the waker is gone; the first hook call after the reset,
    in any session, starts a new one, which resumes straight away.

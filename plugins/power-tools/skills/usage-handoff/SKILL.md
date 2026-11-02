@@ -20,7 +20,7 @@ Claude subscription usage has a 5-hour window and a weekly window. When either f
 ## Arguments (`$ARGUMENTS`)
 
 - **`check`** (default, or empty): one tick (below).
-- **`resume`**: run "Resume" now, even if no reset is due. The background waker starts a session with this argument.
+- **`resume`**: run "Resume" now, even if no reset is due. The background waker starts a hidden `claude -p` session with this request. When you are that hidden session, there is nobody to talk to: do the steps and end with the report, which goes to `resumer.log`.
 - **`status`**: print `USAGE status` as a short summary (phase, reset time, waker alive, pending handoffs). No other action.
 - **`on`** / **`off`**: `USAGE hook on` or `USAGE hook off`, then print its one-line answer. Switches the hook for every session on this machine. Only the owner can ask for this, in their own message.
 - **`reset`**: `USAGE reset`. Back to watching; existing handoff files stay.
@@ -77,7 +77,7 @@ From usage-handoff (<this session>) on the owner's behalf: Claude usage is at <p
 
    If the hook already created a handoff file for a session, that session fills it in instead of writing a new one; the message is harmless either way.
 3. Write this session's own handoff the same way, after asking its own running subagents (if any) for their state. If watching is all it does, a short handoff is fine.
-4. `USAGE mark-handoff --resume-at <resumeAt> --session <this session> --cwd <this session's working folder>`. This records the phase and starts the **background waker**: a detached process that sleeps until the reset and then opens a new terminal running `claude` with the resume request. It's the fallback for when this loop can't run (the limit is already hit, or this session closed). Mention the waker's PID in the report.
+4. `USAGE mark-handoff --resume-at <resumeAt> --session <this session> --cwd <this session's working folder>`. This records the phase and starts the **background waker**: a detached process that sleeps until the reset and then, if any handoff is still pending, starts a hidden `claude -p` session (no window; output in `~/.claude/usage-handoff/resumer.log`) that runs `/usage-handoff resume`. It's the fallback for when this loop can't run (the limit is already hit, or this session closed). Mention the waker's PID in the report.
 5. Peers' one-line replies arrive as `<cross-session-message>` turns. Count them in the next report; don't wait for them. A peer that hasn't written its file by the next tick gets no second message: it's probably already out of usage.
 
 ## Resume
@@ -91,7 +91,7 @@ From usage-handoff (<this session>): Claude usage has reset. Resume from your ha
 ```
 
    Then `USAGE mark-messaged <file> ...` for those files. If one is still pending 15 minutes later, `check` lists it in `stalePending` and the next tick launches it (step 4).
-4. For each pending handoff whose session is closed (`open` is false or null and no `ListAgents` match), or that is in `stalePending`: `USAGE launch <file>`. It opens a new terminal in the handoff's `Cwd`. When `canReopen` is true it runs `claude --resume <session id>`, so the conversation comes back with its full history; otherwise a fresh `claude`. Either way the request is to resume from the file, and the session marks the file itself. `launch` refuses a session that is still open. Never pass `--force` on your own: two copies of one conversation fight over it. Put an open session that ignored the message on the report for the owner instead. If it prints "no terminal found", put the printed command on the report for the owner.
+4. For each pending handoff whose session is closed (`open` is false or null and no `ListAgents` match), or that is in `stalePending`: `USAGE launch <file>`. It opens one new terminal in the handoff's `Cwd`, which closes by itself when that `claude` exits. This is the only case that opens a window: open sessions resume in their own window from the message. When `canReopen` is true it runs `claude --resume <session id>`, so the conversation comes back with its full history; otherwise a fresh `claude`. Either way the request is to resume from the file, and the session marks the file itself. `launch` refuses a session that is still open. Never pass `--force` on your own: two copies of one conversation fight over it. Put an open session that ignored the message on the report for the owner instead. If it prints "no terminal found", put the printed command on the report for the owner.
 5. This session's own handoff: `USAGE mark-resumed <file> --by <this session>`, then carry on with its Next steps after the report.
 6. `USAGE finish-resume`. The loop goes back to watching.
 
