@@ -31,12 +31,16 @@
 // link is broken or points elsewhere in this clone, and reports it. A copy run never links: it
 // replaces a selected stale link with a copy (backed up) and names the recorded ones it left.
 // The manifest also records the groups asked for by name, which /update uses for new skills.
+//
+// A recorded skill that a release retired (RETIRED in layout.mjs) is taken out on every run: its
+// link is removed, a copied folder moves to the backup folder, and it leaves the manifest. An
+// entry of that name the manifest doesn't record is someone else's and is left alone.
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, symlinkSync, unlinkSync, writeFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GROUPS, PLUGINS, pluginDir, pluginHooks, REPO, skillMap, skillsInGroups, version } from "./layout.mjs";
+import { GROUPS, PLUGINS, pluginDir, pluginHooks, REPO, RETIRED, skillMap, skillsInGroups, version } from "./layout.mjs";
 import { graphifyDrift } from "../plugins/power-tools/skills/update/scripts/doctor.mjs";
 
 const PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}";
@@ -213,7 +217,7 @@ export function install(opts, log = console.log) {
 
   const skillsDir = path.join(opts.target, "skills");
   const backupDir = path.join(opts.target, "backups", "claude-power-tools", stamp());
-  const report = { installed: [], relinked: [], replacedLinks: [], staleLinks: [], skipped: [], backedUp: [], agents: [], agentsSkipped: [], hooksAdded: [], settingsBackup: null, notes: [], manifest: null };
+  const report = { installed: [], relinked: [], retired: [], replacedLinks: [], staleLinks: [], skipped: [], backedUp: [], agents: [], agentsSkipped: [], hooksAdded: [], settingsBackup: null, notes: [], manifest: null };
   if (!opts.dryRun) mkdirSync(skillsDir, { recursive: true });
   const link = (src, dest) => symlinkSync(src, dest, process.platform === "win32" ? "junction" : "dir");
   const isStale = (name) => staleLink(path.join(skillsDir, name), path.join(repo, skills[name].dir), repo);
@@ -235,6 +239,30 @@ export function install(opts, log = console.log) {
       link(path.join(repo, skills[name].dir), dest);
     }
     report.relinked.push(name);
+  }
+
+  // Recorded skills a release retired. Only recorded ones: an entry the manifest doesn't list was
+  // not installed by us. A link (symlink or junction) is removed, which leaves what it points at;
+  // a real folder is a copy install and is backed up, never deleted.
+  for (const name of recorded.filter((n) => RETIRED[n] && !skills[n])) {
+    const dest = path.join(skillsDir, name);
+    let entry = null;
+    try {
+      entry = lstatSync(dest);
+    } catch {
+      // already gone; just drop it from the manifest
+    }
+    if (entry?.isSymbolicLink()) {
+      if (!opts.dryRun) unlinkSync(dest);
+    } else if (entry) {
+      const bak = path.join(backupDir, "skills", name);
+      if (!opts.dryRun) {
+        mkdirSync(path.dirname(bak), { recursive: true });
+        renameSync(dest, bak);
+      }
+      report.backedUp.push(slash(bak));
+    }
+    report.retired.push(name);
   }
 
   for (const name of selected) {
@@ -325,7 +353,7 @@ export function install(opts, log = console.log) {
     }
   }
 
-  if (report.installed.length || report.relinked.length) {
+  if (report.installed.length || report.relinked.length || report.retired.length) {
     // Re-linking happens only in a --link run, so the run's mode is what it left behind.
     // `groups` are the groups asked for by name, so far: /update offers new skills only in these.
     // A manifest from before groups were recorded gets them from its skills.
@@ -334,7 +362,7 @@ export function install(opts, log = console.log) {
       ...sourceInfo(repo),
       mode: opts.link ? "link" : "copy",
       source: slash(repo),
-      skills: [...new Set([...recorded, ...report.installed, ...report.relinked])].sort(),
+      skills: [...new Set([...recorded, ...report.installed, ...report.relinked])].filter((n) => !report.retired.includes(n)).sort(),
       groups: [...new Set([...(before?.groups ?? groupsOf(recorded, skills)), ...selectedGroups(opts)])].sort(),
       updated: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
     };
@@ -346,6 +374,7 @@ export function install(opts, log = console.log) {
   if (report.relinked.length) log(`${pre}re-link ${report.relinked.length} skill(s) to their new folders in ${slash(repo)}: ${report.relinked.join(", ")}`);
   if (report.replacedLinks.length) log(`${pre}replace ${report.replacedLinks.length} stale link(s) with copies: ${report.replacedLinks.join(", ")}`);
   if (report.staleLinks.length) log(`left alone: ${report.staleLinks.length} recorded skill(s) whose link is stale (${report.staleLinks.join(", ")}); run the installer with --link in your clone to re-link them`);
+  for (const n of report.retired) log(`${pre}remove retired skill ${n} (use /${RETIRED[n]})`);
   if (report.skipped.length) log(`skipped (already installed; --force replaces them): ${report.skipped.join(", ")}`);
   if (report.agents.length) log(`${pre}install ${report.agents.length} agent(s) into ${slash(agentsDir)}: ${report.agents.join(", ")}`);
   if (report.agentsSkipped.length) log(`agents skipped (already installed; --force replaces them): ${report.agentsSkipped.join(", ")}`);

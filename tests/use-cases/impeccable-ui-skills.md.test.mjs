@@ -59,8 +59,7 @@ test("every /impeccable command our skills and docs name exists in the bundled I
   }
 });
 
-test("ship-plan is no longer a UI caller, and the automatic UI gate never runs overdrive", () => {
-  assert.ok(!/\/impeccable|overdrive/.test(skill("ship-plan").replace(/no longer runs an overdrive pass/, "")), "ship-plan still does design work itself");
+test("the automatic UI gate never runs overdrive", () => {
   const rules = read(RULES);
   assert.ok(!rules.slice(rules.indexOf("## UI gate")).includes("/impeccable overdrive"), "the UI gate runs overdrive");
 });

@@ -100,7 +100,7 @@ test("no skill still refers to an old skill name", () => {
   const old = [
     "/manager", "gh-summary", "gh_summary", "merge-prs", "plan-to-merge", "implement-pr", "monitor-inbox", "read-inbox",
     "jira-act", "jira-triage", "impeccable-critique", "impeccable-finalize", "forclaude-inbox", "gh-merge-open-prs",
-    "issue-list-implementation-plan", "/mock ", "skill: \"manager\"",
+    "issue-list-implementation-plan", "/mock ", "skill: \"manager\"", "ship-plan",
   ];
   for (const file of skillDirs().flatMap((d) => textFiles(d))) {
     const text = readFileSync(file, "utf8");

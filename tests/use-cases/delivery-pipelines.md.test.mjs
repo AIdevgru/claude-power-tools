@@ -1,9 +1,9 @@
 // Use case: tests/use-cases/delivery-pipelines.md
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { skillDir } from "../../scripts/layout.mjs";
+import { PLUGINS, pluginDir, REPO, RETIRED, skillDir } from "../../scripts/layout.mjs";
 import { SHARED, stale } from "../../scripts/sync-shared.mjs";
 
 const skill = (name) => readFileSync(path.join(skillDir(name), "SKILL.md"), "utf8");
@@ -48,21 +48,28 @@ test("implement-to-pr can review the plan first, skip the UI gate, and reads the
   assert.match(text, /ticket key/);
 });
 
-test("ship-plan is a deprecated shim that forwards to implement-to-pr --review-plan --merge", () => {
-  const text = skill("ship-plan");
-  const fm = front(text);
-  assert.match(fm, /^name: ship-plan$/m);
-  assert.match(fm, /^disable-model-invocation: true$/m);
-  assert.match(fm, /^user-invocable: true$/m);
-  assert.ok(!/hooks:/.test(fm), "the shim must not carry its own Stop hook");
-  assert.ok(!existsSync(path.join(skillDir("ship-plan"), "reference")), "the shim keeps no reference/ copy");
-  assert.match(description(text), /^Deprecated/);
-  assert.ok(description(text).length <= 300);
-  assert.ok(text.includes("power-tools:implement-to-pr") && text.includes("Skill tool"), "the shim must invoke implement-to-pr through the Skill tool");
-  assert.ok(text.includes('args: "--review-plan --merge <original args>"'));
-  assert.match(text, /`--no-merge` means drop `--merge`/);
-  assert.match(text, /`--no-ui` passes through/);
-  assert.match(text, /removed in 0\.7\.0/);
+// Every text file outside .git, node_modules, the tests, the changelog and old plans.
+function shippedText(dir = REPO, out = []) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    const rel = path.relative(REPO, p).replace(/\\/g, "/");
+    if ([".git", "tests", "docs/plans", "CHANGELOG.md"].includes(rel) || e.name === "node_modules") continue;
+    if (e.isDirectory()) shippedText(p, out);
+    else if (/\.(md|mjs|js|json|py|txt|yaml|yml)$/.test(e.name)) out.push([rel, p]);
+  }
+  return out;
+}
+
+test("ship-plan is gone in 0.7.0, and nothing still points users to it", () => {
+  for (const plugin of Object.keys(PLUGINS)) assert.ok(!existsSync(path.join(pluginDir(plugin), "skills", "ship-plan")), `${plugin} still ships ship-plan`);
+  assert.throws(() => skillDir("ship-plan"), /unknown skill/);
+  assert.equal(RETIRED["ship-plan"], "implement-to-pr --review-plan --merge");
+  assert.ok(readFileSync(path.join(REPO, "README.md"), "utf8").includes("`/ship-plan` was removed in 0.7.0; use `/implement-to-pr --review-plan --merge`"));
+  for (const [rel, file] of shippedText()) {
+    for (const line of readFileSync(file, "utf8").split(/\r?\n/).filter((l) => l.includes("ship-plan"))) {
+      assert.match(line, /removed|retired|RETIRED/i, `${rel} still points to ship-plan: ${line.trim()}`);
+    }
+  }
 });
 
 test("no pipeline merges without its documented opt-in", () => {
@@ -90,5 +97,5 @@ test("one UI gate lives in the delivery rules, and every pipeline points to it",
 });
 
 test("pipeline descriptions stay at 300 characters or less", () => {
-  for (const name of [...PIPELINES, "ship-plan"]) assert.ok(description(skill(name)).length <= 300, `${name}: ${description(skill(name)).length} chars`);
+  for (const name of PIPELINES) assert.ok(description(skill(name)).length <= 300, `${name}: ${description(skill(name)).length} chars`);
 });

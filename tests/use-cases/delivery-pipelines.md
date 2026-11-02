@@ -16,11 +16,11 @@ PRs and `ticket-to-pr` for tracker tickets.
    the implementation plan into the repo's `plans-dir`, builds it, opens and
    reviews the PR, and merges once CI is green. Without `--merge` it stops at a
    reviewed, green PR.
-4. Muscle memory makes Sam type `/ship-plan docs/plans/billing.md --no-merge`.
-   `ship-plan` is now a deprecated shim with no Stop hook of its own: it tells
-   Sam it will be removed in 0.7.0 and forwards to
-   `implement-to-pr --review-plan --merge`, dropping `--merge` because of
-   `--no-merge` and passing `--no-ui` through.
+4. Muscle memory makes Sam reach for `/ship-plan`, but 0.7.0 removed it: the
+   skill is gone from the plugin, and the installer and `/update` take an old
+   copy out. The README says to use `/implement-to-pr --review-plan --merge`
+   instead (without `--merge` for the old `--no-merge`), and no skill or doc
+   outside the changelog and old plans still points Sam at `ship-plan`.
 5. No pipeline merges without its documented opt-in: `implement-to-pr` only
    with `--merge`, `finish-pr` never, and `ticket-to-pr` only when Sam picks
    "merge". The delivery rules' "Which pipeline" table says the same.

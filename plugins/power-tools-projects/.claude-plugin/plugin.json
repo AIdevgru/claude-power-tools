@@ -1,6 +1,6 @@
 {
   "name": "power-tools-projects",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Take a new project from an empty folder to a deployed app: scaffold, VISION.md, plan, mockup, build and deploy, with a registry that remembers your project folders and where each project stands.",
   "author": { "name": "aidevgru" },
   "repository": "https://github.com/aidevgru/claude-power-tools",

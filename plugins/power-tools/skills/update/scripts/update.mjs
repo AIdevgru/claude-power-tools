@@ -15,6 +15,7 @@
 // --all also installs skills that are new since the last install, in the installer groups the
 // install has (the manifest records them); it never adds a group, so graphify stays opt-in.
 // --ref picks a tag or branch (default: the latest release, else the default branch).
+// A recorded skill the new version retired (RETIRED in its layout.mjs) is removed by its installer.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -58,14 +59,18 @@ export function detectMode(skillDir, manifest) {
 }
 
 // Which skills to refresh and which are new, given what was installed and what the new version has.
+// retired (skill -> replacement command, from the new version) splits the skills it no longer ships
+// into retired ones, which its installer removes, and removed ones, which stay in place.
 // A skill is new only in a group the install has (groupOf: skill -> installer group of the new
 // version), so a core install isn't offered the ui, projects or graphify skills, and --all never
 // brings in graphify unless the install already has it.
-export function plan(installed, available, { all = false, groups = [], groupOf = {} } = {}) {
+export function plan(installed, available, { all = false, groups = [], groupOf = {}, retired = {} } = {}) {
   const update = installed.filter((s) => available.includes(s));
   const added = available.filter((s) => !installed.includes(s) && groups.includes(groupOf[s]));
-  const removed = installed.filter((s) => !available.includes(s));
-  return { update, added, removed, install: all ? [...update, ...added] : update };
+  const gone = installed.filter((s) => !available.includes(s));
+  const removed = gone.filter((s) => !retired[s]);
+  const retiring = gone.filter((s) => retired[s]).map((s) => ({ name: s, use: retired[s] }));
+  return { update, added, removed, retired: retiring, install: all ? [...update, ...added] : update };
 }
 
 // The installer groups an install has: what the manifest recorded, else (a manifest from before
@@ -84,11 +89,18 @@ export async function skillGroups(repo) {
   return Object.fromEntries(Object.entries(skillMap(repo)).map(([name, s]) => [name, s.group]));
 }
 
+// skill -> replacement command for the skills a clone or download retired (0.7 and later).
+export async function retiredSkills(repo) {
+  const file = path.join(repo, "scripts", "layout.mjs");
+  if (!existsSync(file)) return {};
+  return (await import(pathToFileURL(file).href)).RETIRED ?? {};
+}
+
 async function planFor(manifest, target, repo, opts) {
   const available = skillsIn(repo);
   const groupOf = await skillGroups(repo);
   const installed = manifest?.skills ?? guessInstalled(target, available);
-  return plan(installed, available, { all: opts.all, groups: installedGroups(manifest, installed, groupOf), groupOf });
+  return plan(installed, available, { all: opts.all, groups: installedGroups(manifest, installed, groupOf), groupOf, retired: await retiredSkills(repo) });
 }
 
 // Skills installed in target that this collection ships, for installs older than the manifest.
@@ -239,7 +251,7 @@ async function updateLink(manifest, target, opts) {
   if (!opts.force) return report(lines, false);
   if (log && git("pull", "--ff-only", "--quiet").status !== 0) throw new Error(`git pull --ff-only failed in ${slash(clone)}; it has diverged from ${upstream.stdout.trim()}`);
   const p = await planFor(manifest, target, clone, opts);
-  installFrom(clone, target, p.install, { link: true });
+  installFrom(clone, target, p.install, { link: true, retired: p.retired });
   lines.push(`Version ${before} → ${versionOf(clone)}.`, ...newSkillLines(p, opts));
   report(lines, true);
 }
@@ -265,7 +277,7 @@ async function updateCopy(manifest, target, opts) {
     }
     lines.push(`Would update: ${p.update.join(", ") || "nothing"}`, ...newSkillLines(p, opts));
     if (!opts.force || manifest?.commit === commit) return report(lines, opts.force);
-    installFrom(src, target, p.install, { link: false, force: true });
+    installFrom(src, target, p.install, { link: false, force: true, retired: p.retired });
     lines.push("Updated. Old copies are in <target>/backups/claude-power-tools/. Open /hooks once (or restart) so running sessions load new hooks.");
     report(lines, true);
   } finally {
@@ -276,13 +288,15 @@ async function updateCopy(manifest, target, opts) {
 function newSkillLines(p, opts) {
   const out = [];
   if (p.added.length) out.push(opts.all ? `Also installing new skills: ${p.added.join(", ")}` : `New skills available (add with --all): ${p.added.join(", ")}`);
+  for (const r of p.retired) out.push(`Retired: ${r.name}, which the update removes (use /${r.use})`);
   if (p.removed.length) out.push(`No longer shipped (left in place): ${p.removed.join(", ")}`);
   return out;
 }
 
-// Runs the installer that ships with the downloaded or linked version.
-function installFrom(repo, target, skills, { link, force = false }) {
-  if (!skills.length) return;
+// Runs the installer that ships with the downloaded or linked version. It also removes the
+// recorded skills that version retired, so it runs for those alone too.
+function installFrom(repo, target, skills, { link, force = false, retired = [] }) {
+  if (!skills.length && !retired.length) return;
   const args = [path.join(repo, "scripts", "install.mjs"), "--target", target, "--skills", skills.join(",")];
   if (link) args.push("--link");
   if (force) args.push("--force");

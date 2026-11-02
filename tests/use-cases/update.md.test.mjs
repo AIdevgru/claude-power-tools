@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { REPO, skillDir, skillFile, skillModule } from "../../scripts/layout.mjs";
 
 const { diagnose, graphifyDrift, hookCommands, isPlugin } = await skillModule("update", "scripts/doctor.mjs");
-const { cloneRoot, detectMode, installedGroups, listedPlugins, parseArgs, parseRepo, plan, pluginSteps, readManifest, skillGroups, skillsIn, versionOf } = await skillModule("update", "scripts/update.mjs");
+const { cloneRoot, detectMode, installedGroups, listedPlugins, parseArgs, parseRepo, plan, pluginSteps, readManifest, retiredSkills, skillGroups, skillsIn, versionOf } = await skillModule("update", "scripts/update.mjs");
 
 const ROOT = REPO;
 const UPDATE = skillFile("update", "scripts", "update.mjs");
@@ -35,6 +35,17 @@ test("the plan refreshes installed skills, and adds new ones only with --all", (
   assert.deepEqual(p.removed, ["gone"]);
   assert.deepEqual(p.install, ["a", "b"]);
   assert.deepEqual(plan(["a"], ["a", "c"], { all: true, groups: ["core"], groupOf }).install, ["a", "c"]);
+});
+
+test("a skill the new version retired is split from ones it just stopped shipping", async () => {
+  const p = plan(["a", "old", "gone"], ["a"], { retired: { old: "a --flag" } });
+  assert.deepEqual(p.update, ["a"]);
+  assert.deepEqual(p.retired, [{ name: "old", use: "a --flag" }]);
+  assert.deepEqual(p.removed, ["gone"]);
+  assert.deepEqual(plan(["a"], ["a"]).retired, []);
+  // Read from the clone's own layout.mjs; a clone without one retires nothing.
+  assert.equal((await retiredSkills(ROOT))["ship-plan"], "implement-to-pr --review-plan --merge");
+  assert.deepEqual(await retiredSkills(tmp("cpt-no-layout-")), {});
 });
 
 test("new skills count only in the groups the install has; --all never adds graphify", () => {
