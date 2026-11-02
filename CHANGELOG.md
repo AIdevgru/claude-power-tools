@@ -17,6 +17,20 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   `/usage-handoff off` (or `USAGE_HANDOFF_HOOK=off`) turns the hook off; `/loop /usage-handoff`
   adds a watcher session that also messages sessions without the hook.
 
+- **`/usage-handoff rehearse`** plays the whole handoff-and-resume cycle in a scratch folder with
+  made-up usage in about ten seconds, printing `ok` or `FAIL` per step and any leftovers in the
+  real state folder. `reset` and `finish-resume` now remove old resume claims.
+- **`/usage-handoff statusline`** puts usage in Claude Code's status line
+  (`5h 64% · week 49% · resets 00:10 EST`), read from the hooks' shared reading with no extra
+  call to the usage endpoint.
+
+### Changed
+
+- **The usage-handoff hook skips Read, Grep, Glob and other quick lookups** on `PostToolUse`. Each
+  hook call costs a Node start (about 140 ms on Windows) and those tools run most often. A linked
+  install keeps its old hook entry: add the new `matcher` from `docs/hooks.md` to settings.json
+  for the speedup.
+
 ### Fixed
 
 - **usage-handoff resumes without extra windows.** The waker used to open a visible resumer
