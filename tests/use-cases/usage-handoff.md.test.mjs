@@ -11,7 +11,7 @@ const HOME = mkdtempSync(path.join(tmpdir(), "usage-handoff-"));
 process.env.USAGE_HANDOFF_HOME = HOME;
 const {
   MESSAGED_STALE_MS, STALE_CLAIM_MS, cacheTtlMs, cachedWindows, claimResume, decide, handoffSlug, hasTranscript,
-  hookEnabled, hookMessage, hookPlan, isPending, launchCommand, listHandoffs, markResumed, openSessions, pace,
+  hookEnabled, hookMessage, hookPlan, isPending, launchCommand, listHandoffs, localTime, markResumed, openSessions, pace,
   parseHandoff, parseWindows, resolveClaude, RESUMER_TOOLS, resumerCommand, resumePrompt, skeleton, stalePending,
 } = await skillModule("usage-handoff", "scripts/usage.mjs");
 
@@ -200,6 +200,26 @@ test("the hook's handoff skeleton carries the session id, folder and branch", ()
   assert.equal(handoffSlug("C:/work/my repo", "ffc29d72-9d35"), "my-repo-ffc29d72");
   const h = parseHandoff(skeleton({ sessionId: "ffc29d72-9d35", cwd: "C:\\work\\repo", branch: "feat/x", resumeAt: T0, now: T0 }));
   assert.deepEqual([h.status, h.sessionid, h.cwd, h.branch, h.resets], ["pending", "ffc29d72-9d35", "C:/work/repo", "feat/x", "2026-11-01T20:00:00Z"]);
+});
+
+test("times shown to the owner are in their own time zone, with the date when it isn't today", () => {
+  const hhmm = new Date(T0).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+  assert.equal(localTime(T0, T0), hhmm);
+  assert.equal(localTime("2026-11-01T20:00:00Z", T0), hhmm);
+  assert.doesNotMatch(localTime(T0, T0), /Z$|T\d/);
+  const later = localTime(T0 + 3 * 24 * 60 * MIN, T0);
+  assert.match(later, /^\w{3}, \w{3} \d{1,2} \d\d:\d\d /);
+  assert.equal(localTime("not a time"), null);
+  // The handoff keeps the UTC value for the script and shows the local time beside it.
+  const text = skeleton({ sessionId: "s", cwd: "C:/r", resumeAt: T0, now: T0 });
+  assert.ok(text.includes(`Resets: 2026-11-01T20:00:00Z (${hhmm})`));
+  assert.equal(parseHandoff("Session: fix (part 2)\nResets: 2026-11-01T20:00:00Z (15:00 EST)").session, "fix (part 2)");
+  // The note tells sessions to quote local time.
+  const plan = { pct: 96, window: "five_hour", resumeAt: T0, subagent: false };
+  const note = hookMessage(plan, "C:/h.md");
+  assert.ok(note.includes(`resets ${localTime(T0)}`) && note.includes(`After the reset (${localTime(T0)})`));
+  assert.match(note, /not UTC/);
+  assert.match(readFileSync(skillFile("usage-handoff", "SKILL.md"), "utf8"), /Show times in the owner's time zone/);
 });
 
 test("the hook end to end: one note per session, a waker started, and the off switch", () => {

@@ -223,7 +223,9 @@ export function parseHandoff(text) {
   const out = {};
   for (const line of text.split(/\r?\n/).slice(0, 30)) {
     const m = /^(Status|Session|SessionId|Cwd|Branch|PR|Written|Resets):\s*(.*)$/.exec(line.trim());
-    if (m && !(m[1].toLowerCase() in out)) out[m[1].toLowerCase()] = m[2].trim();
+    // "Resets: <UTC> (<local>)": keep the machine-readable part.
+    if (!m || m[1].toLowerCase() in out) continue;
+    out[m[1].toLowerCase()] = (m[1] === "Resets" ? m[2].replace(/\s*\([^)]*\)\s*$/, "") : m[2]).trim();
   }
   return out;
 }
@@ -449,9 +451,17 @@ async function wake() {
 
 const notifiedFile = () => path.join(home(), "notified.json");
 const readJson = (file, fallback) => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return fallback; } };
-const localTime = (ms) => {
-  try { return new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" }); } catch { return iso(ms); }
-};
+// The owner reads times in their own zone: "00:10 EST", with the date when it isn't today.
+export function localTime(ms, now = Date.now()) {
+  const t = typeof ms === "string" ? Date.parse(ms) : ms;
+  if (!Number.isFinite(t)) return null;
+  try {
+    const d = new Date(t);
+    const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+    if (d.toDateString() === new Date(now).toDateString()) return time;
+    return `${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${time}`;
+  } catch { return iso(t); }
+}
 
 export const handoffSlug = (cwd, sessionId) =>
   `${path.basename(cwd || "session").replace(/[^\w.-]/g, "-")}-${String(sessionId || "unknown").replace(/[^\w-]/g, "").slice(0, 8)}`;
@@ -459,7 +469,7 @@ export const handoffSlug = (cwd, sessionId) =>
 export function skeleton({ sessionId, cwd, branch = "-", resumeAt, now = Date.now() }) {
   return [
     "# Handoff", "Status: pending", "Session: (fill in your session name)", `SessionId: ${sessionId}`, `Cwd: ${fwd(cwd)}`,
-    `Branch: ${branch || "-"}`, "PR: -", `Written: ${iso(now)}`, `Resets: ${iso(resumeAt)}`, "",
+    `Branch: ${branch || "-"}`, "PR: -", `Written: ${iso(now)}`, `Resets: ${iso(resumeAt)} (${localTime(resumeAt, now)})`, "",
     "## Goal", "", "## Done", "", "## In flight (one entry per subagent)", "", "## Next steps", "", "## Watch out for", "",
   ].join("\n");
 }
@@ -487,7 +497,7 @@ export function hookMessage(plan, file) {
     "2. Tell each subagent you have running (SendMessage to its id) to stop at a safe point and report its goal, what's done, what's left, its worktree and branch, and any uncommitted changes.",
     "3. Save uncommitted work as a WIP commit on your own branch if the repo's rules allow (never git stash).",
     `4. Fill in your handoff at ${fwd(file)}: Read it, put your session name on the Session line, and write each section so a fresh session could carry on.`,
-    "5. End your turn. After the reset this session is reopened or messaged and told to resume from that file.",
+    `5. End your turn. After the reset (${localTime(plan.resumeAt)}) this session is reopened or messaged and told to resume from that file. When you tell the owner a time, use their local time as written here, not UTC.`,
     "The owner can turn this off with /usage-handoff off.",
   ].join("\n");
 }
@@ -573,9 +583,10 @@ async function main(argv) {
       const handoffs = listHandoffs();
       return out({
         ...d,
+        ...(d.resumeAt ? { resumeAtLocal: localTime(d.resumeAt) } : {}),
         phase: state.phase ?? "watching",
         ...(error ? { error } : {}),
-        windows: (windows ?? []).map((w) => ({ name: w.name, pct: w.pct, resetsAt: w.resetsAt ? iso(w.resetsAt) : null })),
+        windows: (windows ?? []).map((w) => ({ name: w.name, pct: w.pct, resetsAt: w.resetsAt ? iso(w.resetsAt) : null, resetsAtLocal: w.resetsAt ? localTime(w.resetsAt) : null })),
         handoffDir: fwd(handoffDir()),
         pending: handoffs.filter(isPending).length,
         stalePending: stalePending(state, handoffs),
@@ -594,7 +605,7 @@ async function main(argv) {
       };
       if (!args.includes("--no-waker")) next.waker = armWaker(next);
       writeState(next);
-      return out({ phase: next.phase, resumeAt: next.resumeAt, waker: next.waker ?? null, handoffDir: fwd(handoffDir()) });
+      return out({ phase: next.phase, resumeAt: next.resumeAt, resumeAtLocal: localTime(next.resumeAt), waker: next.waker ?? null, handoffDir: fwd(handoffDir()) });
     }
     case "claim-resume": {
       const r = claimResume(flag(args, "--by", "unknown"), state);
@@ -642,7 +653,7 @@ async function main(argv) {
       await wake();
       return 0;
     case "status":
-      return out({ ...state, waker: state.waker ? { ...state.waker, alive: alive(state.waker.pid) } : null, handoffDir: fwd(handoffDir()) });
+      return out({ ...state, ...(state.resumeAt ? { resumeAtLocal: localTime(state.resumeAt) } : {}), waker: state.waker ? { ...state.waker, alive: alive(state.waker.pid) } : null, handoffDir: fwd(handoffDir()) });
     case "reset":
       writeState({ phase: "watching", threshold: state.threshold });
       return out("reset: watching");

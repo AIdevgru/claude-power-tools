@@ -27,6 +27,10 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   a closed session reopens in a window that closes when you exit it. The waker starts `claude` by
   its full path (`USAGE_HANDOFF_CLAUDE` overrides), because `cmd.exe` can miss it in a long PATH.
 
+- **usage-handoff shows times in your time zone.** The note, the handoff's `Resets:` line
+  (`2026-11-02T05:10:00Z (00:10 EST)`) and `check`/`status` (`resumeAtLocal`) give local time,
+  with the date when the reset isn't today. Sessions are told never to quote UTC.
+
 ## 0.6.0 (2026-10-31)
 
 Upgrading from 0.5? See "Upgrading from 0.5" in the README. The old `/update` can't follow the
