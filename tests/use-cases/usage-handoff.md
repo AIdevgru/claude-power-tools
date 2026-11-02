@@ -25,7 +25,11 @@ subscription with a 5-hour usage window.
    won't reopen a session that is still open.
    If the machine rebooted while waiting, the waker is gone; the first hook call after the reset,
    in any session, starts a new one, which resumes straight away.
-5. Lee doesn't want this on one machine, so they type `/usage-handoff off`. The hook stays
+5. Every time Lee sees is in Lee's own time zone: the note says "resets 00:10 EST", the
+   handoff's `Resets:` line reads `2026-11-02T05:10:00Z (00:10 EST)`, and `check` and
+   `status` add `resumeAtLocal`. A reset on another day carries the date ("Mon, Nov 2 00:10 EST").
+   Sessions are told to quote those, never a UTC time.
+6. Lee doesn't want this on one machine, so they type `/usage-handoff off`. The hook stays
    silent in every session until `/usage-handoff on`. `USAGE_HANDOFF_HOOK=off` does the same for
    one environment.
 
