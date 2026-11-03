@@ -374,6 +374,21 @@ test("the resume session runs hidden with only the tools it needs, and new windo
   assert.equal(launchCommand({ platform: "linux", cwd: "/w", prompt, claude: "/bin/claude", has: (n) => n === "xterm" }).args.at(-1), "cd '/w' && '/bin/claude' 'go'");
 });
 
+test("nothing the waker starts opens a window or takes focus", () => {
+  // The waker runs with no console. On Windows, a child started without windowsHide gets a new,
+  // visible console window that takes focus, so every process this script starts hides it.
+  const src = readFileSync(SCRIPT, "utf8");
+  const calls = src.split("\n").filter((l) => /\b(execFileSync|spawn)\(/.test(l) && !/^\s*(\/\/|import)/.test(l));
+  assert.ok(calls.length >= 8, `found ${calls.length} process calls`);
+  for (const l of calls) assert.match(l, /windowsHide: true|\.\.\.how/, `no windowsHide: ${l.trim()}`);
+  // The resume session gets a hidden console of its own (attached, hidden), which the hooks, git
+  // and shells it runs share instead of each opening a window. The waker waits for it, because
+  // Windows ends an attached child when its parent exits. Elsewhere it's detached as before.
+  assert.deepEqual(mod.resumerSpawn("win32"), { detached: false, windowsHide: true, wait: true });
+  assert.deepEqual(mod.resumerSpawn("linux"), { detached: true, windowsHide: true, wait: false });
+  assert.deepEqual(mod.resumerSpawn("darwin"), { detached: true, windowsHide: true, wait: false });
+});
+
 test("claude is found by its full path, not left to a long PATH", () => {
   const none = () => [];
   assert.equal(resolveClaude({ env: { USAGE_HANDOFF_CLAUDE: "/x/claude" } }), "/x/claude");

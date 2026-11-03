@@ -18,6 +18,12 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   renewed token, the next hook call or status line refresh reads usage again instead of showing
   the old reading, or "no reading yet", for up to 10 minutes. When the reading failed, the status
   line now says why (`usage: not logged in ...`).
+- **The hidden resume session no longer takes focus on Windows.** The waker runs without a console,
+  so a program it started without hiding (finding `claude` with `where`) opened its own console
+  window and took focus. So could anything the resume session ran (hooks, git, shells), because
+  it had no console either. Every process usage-handoff starts now hides its window, and the
+  resume session gets one hidden console that what it runs shares. On Windows the waker waits for
+  that session to end (an attached child ends with its parent) and logs its exit code.
 
 ### Changed
 
