@@ -394,6 +394,8 @@ test("the status line shows each window, the reset in local time, the handoff an
   assert.equal(mod.shortLocalTime(later, T0), `${weekday} ${laterTime}`);
   assert.equal(mod.shortLocalTime(T0 + 30 * MIN, T0), soon);
   assert.equal(mod.shortLocalTime(T0 + 8 * 24 * 60 * MIN, T0), mod.localTime(T0 + 8 * 24 * 60 * MIN, T0), "a week or more away keeps the date");
+  const sameWeekdayNextWeek = T0 + (7 * 24 * 60 - 60) * MIN; // under 7 days, but the same weekday as today
+  assert.equal(mod.shortLocalTime(sameWeekdayNextWeek, T0), mod.localTime(sameWeekdayNextWeek, T0), "next week's same weekday keeps the date");
   assert.equal(statusText({ cache, now: T0 }), `5h 64% (resets ${soon}) · week 49% (resets ${weekday} ${laterTime})`);
   assert.equal(statusText({ cache, state: { phase: "handoff", resumeAt: "2026-11-01T20:30:00Z" }, now: T0 }), `5h 64% (resets ${soon}) · week 49% (resets ${weekday} ${laterTime}) · handing off, back ${soon}`);
   assert.equal(statusText({ cache: { at: T0, windows: [{ name: "five_hour", pct: 3, resetsAt: T0 - MIN }] }, now: T0 }), "5h 3%", "a passed reset isn't shown");
@@ -432,4 +434,21 @@ test("the usage hook skips quick lookups after a tool call but checks everything
   for (const t of ["Bash", "PowerShell", "Edit", "Write", "Agent", "Skill", "SendMessage", "mcp__github__create_pr"]) assert.ok(re.test(t), t);
   for (const t of ["Read", "Grep", "Glob", "ToolSearch"]) assert.ok(!re.test(t), t);
   assert.ok(hooks.hooks.UserPromptSubmit.some((g) => !g.matcher && g.hooks.some((h) => h.command.includes("usage.mjs"))));
+});
+
+test("a limit that resets before its predicted time resumes then, not at the predicted time", () => {
+  const state = { phase: "handoff", resumeAt: new Date(T0 + 120 * MIN).toISOString(), threshold: 95 };
+  const rolled = parseWindows(usage(19, 25, T0 + 270 * MIN)); // the 5h window rolled over: new reset, low usage
+  assert.equal(mod.resetEarly({ windows: rolled, state, now: T0 }), true);
+  const d = decide({ windows: rolled, state, now: T0 });
+  assert.equal(d.action, "resume");
+  assert.equal(d.early, true);
+  // Still the same window (it resets at the predicted time), or still at the threshold: keep waiting.
+  assert.equal(mod.resetEarly({ windows: parseWindows(usage(19, 25, T0 + 120 * MIN)), state, now: T0 }), false);
+  assert.equal(mod.resetEarly({ windows: parseWindows(usage(96, 25, T0 + 270 * MIN)), state, now: T0 }), false);
+  assert.equal(mod.resetEarly({ windows: null, state, now: T0 }), false, "no reading, no guess");
+  assert.equal(decide({ windows: parseWindows(usage(96, 25, T0 + 120 * MIN)), state, now: T0 }).action, "wait");
+  // The status line says so instead of "handing off, back ...".
+  const cache = { at: T0, windows: rolled };
+  assert.match(mod.statusText({ cache, state, now: T0 }), /· reset early, resuming$/);
 });
