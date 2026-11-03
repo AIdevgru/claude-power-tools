@@ -37,6 +37,7 @@
 // failure is reported as action "unknown" instead of guessed.
 
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, closeSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
@@ -141,6 +142,20 @@ function credentials() {
   throw new Error(`no Claude Code login found at ${fwd(file)}`);
 }
 
+// Which login a reading belongs to: a short hash of the saved token (never the token itself),
+// "none" when there's no login, null when usage comes from a fixture or a command. Logging in,
+// logging out or a renewed token changes it, so the next hook call or status line reads again
+// instead of showing the old login's reading (or its "not logged in" error) until the cache expires.
+export function loginStamp(env = process.env) {
+  if (env.USAGE_HANDOFF_FIXTURE || env.USAGE_HANDOFF_CMD) return null;
+  try {
+    const token = credentials()?.accessToken;
+    return token ? createHash("sha256").update(token).digest("hex").slice(0, 12) : "none";
+  } catch {
+    return "none";
+  }
+}
+
 // Returns the raw usage JSON, or throws with a one-line reason.
 export async function fetchUsage() {
   if (process.env.USAGE_HANDOFF_FIXTURE) return JSON.parse(readFileSync(process.env.USAGE_HANDOFF_FIXTURE, "utf8"));
@@ -181,18 +196,29 @@ export function cacheTtlMs(pct, threshold = DEFAULT_THRESHOLD) {
 }
 
 // force: read now (the /usage-handoff tick), but still share the reading with the hooks.
-export async function cachedWindows(now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, force = false) {
+// login: loginStamp() now. A reading taken under another login is stale whatever its age.
+export async function cachedWindows(now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, force = false, login = loginStamp()) {
   let cache = {};
   try { cache = JSON.parse(readFileSync(cacheFile(), "utf8")); } catch {}
   const pct = cache.windows?.[0]?.pct ?? null;
-  const fresh = cache.at && now - cache.at < cacheTtlMs(pct, threshold);
+  const sameLogin = login == null || cache.login === login;
+  const fresh = cache.at && now - cache.at < cacheTtlMs(pct, threshold) && sameLogin;
   const leased = cache.leaseAt && now - cache.leaseAt < 30_000; // another session is reading right now
   if (!force && (fresh || leased)) return { windows: cache.windows ?? null, error: cache.error, cached: true };
   mkdirSync(home(), { recursive: true });
   writeFileSync(cacheFile(), JSON.stringify({ ...cache, leaseAt: now }));
   const r = await read();
-  writeFileSync(cacheFile(), JSON.stringify({ at: now, windows: r.windows, ...(r.error ? { error: r.error } : {}) }));
+  writeFileSync(cacheFile(), JSON.stringify({ at: now, windows: r.windows, ...(r.error ? { error: r.error } : {}), ...(login != null ? { login } : {}) }));
   return { ...r, cached: false };
+}
+
+// The status line's reading. It never calls the endpoint for an old reading, only when the login
+// changed since the reading was taken (the owner just logged in, say), so the line is right at once.
+export async function statusCache({ now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, login = loginStamp() } = {}) {
+  const cache = readJson(cacheFile(), null);
+  if (login == null || cache?.login === login) return cache;
+  await cachedWindows(now, threshold, read, false, login);
+  return readJson(cacheFile(), cache);
 }
 
 export function hookEnabled(env = process.env) {
@@ -620,7 +646,7 @@ export function statusText({ cache, state = {}, now = Date.now() }) {
   // A fixed order (5h, then week, then any others), so the line doesn't reshuffle as usage moves.
   const order = (w) => { const i = Object.keys(WINDOW_LABELS).indexOf(w.name); return i < 0 ? 99 : i; };
   const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number").sort((a, b) => order(a) - order(b));
-  if (!windows.length) return "usage: no reading yet";
+  if (!windows.length) return cache?.error ? `usage: ${cache.error}` : "usage: no reading yet";
   const parts = windows.map((w) => {
     const label = `${WINDOW_LABELS[w.name] ?? w.name.replace(/_/g, "-")} ${Math.round(w.pct)}%`;
     return w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label;
@@ -809,8 +835,7 @@ async function main(argv) {
       return out("reset: watching");
     case "statusline": {
       // A status line command gets session JSON on stdin; this line needs none of it.
-      let cache = null;
-      try { cache = JSON.parse(readFileSync(cacheFile(), "utf8")); } catch {}
+      const cache = await statusCache({ threshold: state.threshold ?? DEFAULT_THRESHOLD });
       return out(statusText({ cache, state }));
     }
     case "rehearse":
