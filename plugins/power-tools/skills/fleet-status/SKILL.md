@@ -107,8 +107,8 @@ Card layout, one line each, with every line padded with spaces to the closing `|
 Below the code block, add a **Needs you** list: one numbered line per `ASK:` and `BLOCKER:`, then any cross-session conflicts you spot (such as two sessions claiming the same migration number). Nothing else.
 
 **Timestamp every "Needs you" list.**
-- **Heading:** read the clock fresh with a tool call each time (`date '+%Y-%m-%d %H:%M %Z'` and `date -u '+%H:%M UTC'`), never from memory. Write the heading as `**Needs you (as of 2026-10-07 00:42 EDT / 04:42 UTC)**`.
-- **Items:** end each item with `(since HH:MM)`, the local time it FIRST appeared in this conversation, so the owner can see how long it has waited. Keep that original time when the item is repeated, and drop the item once it's resolved.
+- **Heading:** read the clock fresh with a tool call each time (`date '+%Y-%m-%d %-I:%M %p %Z'` and `date -u '+%H:%M UTC'`), never from memory. Write the heading as `**Needs you (as of 2026-10-07 12:42 AM EDT / 04:42 UTC)**`.
+- **Items:** end each item with `(since H:MM AM)` or `(since H:MM PM)`, the local time it FIRST appeared in this conversation, so the owner can see how long it has waited. Keep that original time when the item is repeated, and drop the item once it's resolved.
 
 **Clean output (applies to the whole skill):** write no narration before, between or after tool calls ("Let me…", "Now I'll…", recaps). A turn's visible text is the cards, the Needs you list, and at most one closing line, e.g. "`/fleet-status send` to message sessions". This skill is mechanical.
 

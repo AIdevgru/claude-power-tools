@@ -8,9 +8,11 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Changed
 
-- **The usage status line shows each window's own reset**: `5h 68% (resets 05:10 EST) · week 23%
-  (resets Sun 16:00 EST)`. Before, one reset time followed both windows, so it wasn't clear which
+- **The usage status line shows each window's own reset**: `5h 68% (resets 5:10 AM EST) · week 23%
+  (resets Sun 4:00 PM EST)`, with 5h always first. Before, one reset time followed both windows, so it wasn't clear which
   one it belonged to.
+- **Times shown to the owner are 12-hour with AM or PM** (`12:10 AM EST`), in usage-handoff, the
+  status line and the fleet-manager and fleet-status reports. Logs and handoff files keep UTC.
 
 ## 0.7.0 (2026-11-02)
 

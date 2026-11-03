@@ -468,13 +468,19 @@ async function wake() {
 
 const notifiedFile = () => path.join(home(), "notified.json");
 const readJson = (file, fallback) => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return fallback; } };
-// The owner reads times in their own zone: "00:10 EST", with the date when it isn't today.
+// The time of day in the owner's zone, 12-hour: "12:10 AM EST".
+export function clockTime(ms) {
+  // Newer ICU puts a narrow no-break space before AM/PM; a plain space reads the same everywhere.
+  return new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" }).replace(/[\u202f\u00a0]/g, " ");
+}
+
+// The owner reads times in their own zone: "12:10 AM EST", with the date when it isn't today.
 export function localTime(ms, now = Date.now()) {
   const t = typeof ms === "string" ? Date.parse(ms) : ms;
   if (!Number.isFinite(t)) return null;
   try {
     const d = new Date(t);
-    const time = d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+    const time = clockTime(t);
     if (d.toDateString() === new Date(now).toDateString()) return time;
     return `${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${time}`;
   } catch { return iso(t); }
@@ -576,20 +582,22 @@ export async function runHook(raw, now = Date.now()) {
 
 const WINDOW_LABELS = { five_hour: "5h", seven_day: "week" };
 
-// localTime, shorter for the status line: "00:10 EST" today, "Sun 19:00 EST" within the week.
+// localTime, shorter for the status line: "12:10 AM EST" today, "Sun 4:00 PM EST" within the week.
 export function shortLocalTime(ms, now = Date.now()) {
   const full = localTime(ms, now);
   if (!full || ms - now >= 7 * 86_400_000 || new Date(ms).toDateString() === new Date(now).toDateString()) return full;
   try {
-    return `${new Date(ms).toLocaleDateString("en-US", { weekday: "short" })} ${full.split(" ").slice(-2).join(" ")}`;
+    return `${new Date(ms).toLocaleDateString("en-US", { weekday: "short" })} ${clockTime(ms)}`;
   } catch { return full; }
 }
 
 // One short line for Claude Code's status line, from the shared cache only (no API call):
-// "5h 64% (resets 00:10 EST) · week 49% (resets Sun 19:00 EST)". Each window carries its own
+// "5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)". Each window carries its own
 // reset, so it's clear which one resets when.
 export function statusText({ cache, state = {}, now = Date.now() }) {
-  const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number");
+  // A fixed order (5h, then week, then any others), so the line doesn't reshuffle as usage moves.
+  const order = (w) => { const i = Object.keys(WINDOW_LABELS).indexOf(w.name); return i < 0 ? 99 : i; };
+  const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number").sort((a, b) => order(a) - order(b));
   if (!windows.length) return "usage: no reading yet";
   const parts = windows.map((w) => {
     const label = `${WINDOW_LABELS[w.name] ?? w.name.replace(/_/g, "-")} ${Math.round(w.pct)}%`;

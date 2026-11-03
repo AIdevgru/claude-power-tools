@@ -204,12 +204,13 @@ test("the hook's handoff skeleton carries the session id, folder and branch", ()
 });
 
 test("times shown to the owner are in their own time zone, with the date when it isn't today", () => {
-  const hhmm = new Date(T0).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+  const hhmm = new Date(T0).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" }).replace(/[\u202f\u00a0]/g, " ");
+  assert.match(mod.clockTime(T0), /^\d{1,2}:\d\d (AM|PM) \S+$/, "12-hour with AM or PM and plain spaces");
   assert.equal(localTime(T0, T0), hhmm);
   assert.equal(localTime("2026-11-01T20:00:00Z", T0), hhmm);
   assert.doesNotMatch(localTime(T0, T0), /Z$|T\d/);
   const later = localTime(T0 + 3 * 24 * 60 * MIN, T0);
-  assert.match(later, /^\w{3}, \w{3} \d{1,2} \d\d:\d\d /);
+  assert.match(later, /^\w{3}, \w{3} \d{1,2} \d{1,2}:\d\d (AM|PM) /);
   assert.equal(localTime("not a time"), null);
   // The handoff keeps the UTC value for the script and shows the local time beside it.
   const text = skeleton({ sessionId: "s", cwd: "C:/r", resumeAt: T0, now: T0 });
@@ -389,13 +390,15 @@ test("the status line shows each window, the reset in local time, the handoff an
   const soon = mod.localTime(T0 + 30 * MIN, T0);
   const later = T0 + 3 * 24 * 60 * MIN;
   const weekday = new Date(later).toLocaleDateString("en-US", { weekday: "short" });
-  const laterTime = mod.localTime(later, T0).split(" ").slice(-2).join(" ");
+  const laterTime = mod.clockTime(later);
   assert.equal(mod.shortLocalTime(later, T0), `${weekday} ${laterTime}`);
   assert.equal(mod.shortLocalTime(T0 + 30 * MIN, T0), soon);
   assert.equal(mod.shortLocalTime(T0 + 8 * 24 * 60 * MIN, T0), mod.localTime(T0 + 8 * 24 * 60 * MIN, T0), "a week or more away keeps the date");
   assert.equal(statusText({ cache, now: T0 }), `5h 64% (resets ${soon}) · week 49% (resets ${weekday} ${laterTime})`);
   assert.equal(statusText({ cache, state: { phase: "handoff", resumeAt: "2026-11-01T20:30:00Z" }, now: T0 }), `5h 64% (resets ${soon}) · week 49% (resets ${weekday} ${laterTime}) · handing off, back ${soon}`);
   assert.equal(statusText({ cache: { at: T0, windows: [{ name: "five_hour", pct: 3, resetsAt: T0 - MIN }] }, now: T0 }), "5h 3%", "a passed reset isn't shown");
+  const fullerWeek = { at: T0, windows: [{ name: "seven_day", pct: 71 }, { name: "five_hour", pct: 32 }] };
+  assert.equal(statusText({ cache: fullerWeek, now: T0 }), "5h 32% · week 71%", "5h always comes first");
   assert.match(statusText({ cache, now: T0 + 20 * MIN }), /· 20 min old$/);
   assert.equal(statusText({ cache: null }), "usage: no reading yet");
 });

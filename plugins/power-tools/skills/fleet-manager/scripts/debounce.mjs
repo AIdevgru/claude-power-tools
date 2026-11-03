@@ -36,7 +36,7 @@ const NOT_REQUESTS = new Set(["README.md", "TEMPLATE.md"]);
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
 const local = (ms) => {
   try {
-    return new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+    return new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" }).replace(/[\u202f\u00a0]/g, " ");
   } catch {
     return iso(ms);
   }
