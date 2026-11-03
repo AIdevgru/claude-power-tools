@@ -25,9 +25,9 @@ subscription with a 5-hour usage window.
    won't reopen a session that is still open.
    If the machine rebooted while waiting, the waker is gone; the first hook call after the reset,
    in any session, starts a new one, which resumes straight away.
-5. Every time Lee sees is in Lee's own time zone: the note says "resets 00:10 EST", the
-   handoff's `Resets:` line reads `2026-11-02T05:10:00Z (00:10 EST)`, and `check` and
-   `status` add `resumeAtLocal`. A reset on another day carries the date ("Mon, Nov 2 00:10 EST").
+5. Every time Lee sees is in Lee's own time zone: the note says "resets 12:10 AM EST", the
+   handoff's `Resets:` line reads `2026-11-02T05:10:00Z (12:10 AM EST)`, and `check` and
+   `status` add `resumeAtLocal`. A reset on another day carries the date ("Mon, Nov 2 12:10 AM EST"). Times are 12-hour with AM or PM.
    Sessions are told to quote those, never a UTC time.
 6. Lee doesn't want this on one machine, so they type `/usage-handoff off`. The hook stays
    silent in every session until `/usage-handoff on`. `USAGE_HANDOFF_HOOK=off` does the same for
@@ -67,10 +67,11 @@ subscription with a 5-hour usage window.
    but it lists leftovers in the real state folder, such as an old resume claim, which the next
    `finish-resume` or `reset` removes.
 2. Lee wants to see the limit coming, so they run `/usage-handoff statusline` and, after saying
-   yes, get a status line like `5h 64% (resets 00:10 EST) · week 49% (resets Sun 16:00 EST)`: each
-   window carries its own reset, as a weekday when it's later this week. It reads the reading the
+   yes, get a status line like `5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)`:
+   each window carries its own reset, as a weekday when it's later this week, and 5h always comes
+   first. It reads the reading the
    hooks already share, so it never calls the usage endpoint. While handing off it says
-   `handing off, back 00:10 EST`; a reading older than 15 minutes says how old it is.
+   `handing off, back 12:10 AM EST`; a reading older than 15 minutes says how old it is.
 3. The hook doesn't run after Read, Grep, Glob and other quick lookups. Each hook call costs a
    Node start, and those tools run most often; any prompt, command, edit, subagent, skill or MCP
    call still checks usage.

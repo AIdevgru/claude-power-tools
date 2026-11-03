@@ -172,7 +172,7 @@ Needs owner: <numbered decisions, or "nothing">
 Next tick:   <in Ns, and why>
 ```
 
-Every time in the report (the header, ETAs, "since" stamps) is local time with its zone named, such as `07:14 EDT`. Read the clock with a tool (`date '+%H:%M %Z'`) and convert any UTC time from GitHub or logs before printing it. The ledger keeps UTC.
+Every time in the report (the header, ETAs, "since" stamps) is local time with its zone named, such as `7:14 AM EDT` (12-hour, with AM or PM). Read the clock with a tool (`date '+%-I:%M %p %Z'`) and convert any UTC time from GitHub or logs before printing it. The ledger keeps UTC.
 
 Needs owner must be specific:
 
