@@ -175,6 +175,54 @@ test("the hook re-reads usage every 10 minutes when low and every minute near th
   rmSync(path.join(HOME, "usage-cache.json"), { force: true });
 });
 
+test("logging in reads usage again at once, for the hooks and the status line", async () => {
+  const { loginStamp, statusCache, statusText } = mod;
+  // The stamp is a short hash of the saved token: it changes with the login, and never holds the token.
+  const dir = mkdtempSync(path.join(tmpdir(), "usage-login-"));
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  try {
+    const login = (token) => writeFileSync(path.join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: token } }));
+    login("sk-ant-oat-first");
+    const first = loginStamp({});
+    assert.match(first, /^[0-9a-f]{12}$/);
+    assert.ok(!"sk-ant-oat-first".includes(first));
+    assert.equal(loginStamp({}), first);
+    login("sk-ant-oat-second");
+    assert.notEqual(loginStamp({}), first, "a new login (or a renewed token) changes the stamp");
+    if (process.platform !== "darwin") { // macOS falls back to the keychain
+      rmSync(path.join(dir, ".credentials.json"));
+      assert.equal(loginStamp({}), "none");
+    }
+    assert.equal(loginStamp({ USAGE_HANDOFF_FIXTURE: "x.json" }), null, "fixtures and commands have no login");
+  } finally {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  // Logged out: the reading fails and is cached for 10 minutes. Logging in doesn't wait that out.
+  rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+  let reads = 0;
+  const loggedOut = async () => ((reads += 1), { windows: null, error: "not logged in with a Claude subscription (no OAuth token)" });
+  const loggedIn = async () => ((reads += 1), { windows: parseWindows(usage(40)) });
+  assert.equal((await cachedWindows(T0, 95, loggedOut, false, "none")).windows, null);
+  assert.equal((await cachedWindows(T0 + MIN, 95, loggedIn, false, "none")).cached, true, "same login: the cache holds");
+  const after = await cachedWindows(T0 + 2 * MIN, 95, loggedIn, false, "abc123def456");
+  assert.equal(after.cached, false, "a new login reads again before the 10 minutes are up");
+  assert.equal(after.windows[0].pct, 40);
+  assert.equal(JSON.parse(readFileSync(path.join(HOME, "usage-cache.json"), "utf8")).login, "abc123def456");
+  assert.equal(reads, 2);
+
+  // The status line reads only when the login changed, and then shows the new reading straight away.
+  assert.equal((await statusCache({ now: T0 + 3 * MIN, read: loggedOut, login: "abc123def456" })).windows[0].pct, 40);
+  assert.equal((await statusCache({ now: T0 + 3 * MIN, read: loggedOut, login: null })).windows[0].pct, 40);
+  assert.equal(reads, 2, "same login, or no login to compare: no extra call");
+  const out = await statusCache({ now: T0 + 4 * MIN, read: loggedOut, login: "none" });
+  assert.equal(reads, 3, "logging out reads again too");
+  assert.equal(statusText({ cache: out, now: T0 + 4 * MIN }), "usage: not logged in with a Claude subscription (no OAuth token)");
+  rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+});
+
 test("the hook tells each session and each subagent once per window, and ignores a reading past its reset", () => {
   const input = { session_id: "abcdef12-3456", cwd: "/w/repo" };
   const hot = parseWindows(usage(97, 10, T0 + 30 * MIN));

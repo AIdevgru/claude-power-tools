@@ -13,6 +13,11 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   reading, and the status line says `reset early, resuming`.
 - **The status line no longer shows a bare weekday for next week's same day.** On a Monday, next
   Monday's reset shows its date (`Mon, Nov 9 1:59 PM EST`), not `Mon`.
+- **Usage is read again as soon as you log in.** The shared reading now remembers which login it
+  was taken under (a short hash of the token, never the token). After `/login`, a logout or a
+  renewed token, the next hook call or status line refresh reads usage again instead of showing
+  the old reading, or "no reading yet", for up to 10 minutes. When the reading failed, the status
+  line now says why (`usage: not logged in ...`).
 
 ### Changed
 

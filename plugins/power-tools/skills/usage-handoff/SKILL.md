@@ -27,7 +27,7 @@ Claude subscription usage has a 5-hour window and a weekly window. When either f
 - **`rehearse`**: `USAGE rehearse`. Runs the whole cycle in a scratch folder with made-up usage (96%, the note, the handoff, the waker, the reset, the hidden resume, back to watching) in about 10 seconds, without touching real sessions or starting Claude. Print its lines as they are. Its `note` lines are leftovers in the real state folder.
 - **`statusline`**: show the owner how to put usage in Claude Code's status line. Run `USAGE paths` and take its `script` path, then print this snippet for `~/.claude/settings.json` with that path, and ask before editing their settings (an existing `statusLine` would be replaced):
   `"statusLine": { "type": "command", "command": "node \"<script>\" statusline" }`
-  It prints e.g. `5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)` from the hooks' shared reading, with no extra call to the usage endpoint. A plugin install's path changes with each version; a linked install's (`~/.claude/skills/usage-handoff/scripts`) doesn't.
+  It prints e.g. `5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)` from the hooks' shared reading. It calls the usage endpoint only when the login changed since that reading, so it's right straight after `/login`. A plugin install's path changes with each version; a linked install's (`~/.claude/skills/usage-handoff/scripts`) doesn't.
 - **`--threshold N`**: the percentage that triggers handoffs (default 95). It's saved, so later ticks keep it.
 
 ## The hook
@@ -35,6 +35,7 @@ Claude subscription usage has a 5-hour window and a weekly window. When either f
 Registered by the plugin (and by the installer) for `UserPromptSubmit` and `PostToolUse`, as `USAGE --hook`. It's on by default.
 
 - **Cost:** it reads usage from a cache shared by every session: re-read every 10 minutes when usage is low, every minute within 10 points of the threshold. Otherwise it reads a small file and exits.
+- **After a login:** the cache records which login the reading belongs to (a short hash of the token). When the owner logs in, logs out or the token is renewed, the next hook call or status line refresh reads again at once.
 - **At the threshold, once per session and once per subagent per window**, it adds a note to that conversation:
   - A **session** is told to stop starting work, collect state from its subagents, WIP-commit, and fill in its handoff. The hook has already created the file (`<handoffDir>/<folder>-<session id>.md`) with `Status: pending`, `SessionId`, `Cwd` and `Branch` filled in. The session adds its name and the sections.
   - A **subagent** is told to stop at a safe point and end with a report for its parent.

@@ -60,6 +60,12 @@ subscription with a 5-hour usage window.
    shows up as `stalePending`, and the next tick opens a new session for it.
 8. If the usage endpoint can't be read (logged out, expired token, network), the tick says
    `unknown` with the reason instead of guessing.
+9. Lee was logged out, so the shared reading says "not logged in", and the status line shows that
+   reason. Lee runs `/login`. The reading remembers which login it was taken under (a short hash
+   of the token, never the token), so the next hook call or status line refresh sees the new login
+   and reads usage again at once instead of waiting out the 10-minute cache. The status line shows
+   real numbers straight away. Logging out, or Claude Code renewing an expired token, re-reads the
+   same way.
 
 ## Checking it works, and seeing it
 
