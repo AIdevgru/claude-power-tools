@@ -6,6 +6,14 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ## Unreleased
 
+### Fixed
+
+- **usage-handoff resumes when a limit resets early.** It used to wait for the predicted reset
+  time even when the window had already reset. While waiting, the waker now checks the shared
+  reading, and the status line says `reset early, resuming`.
+- **The status line no longer shows a bare weekday for next week's same day.** On a Monday, next
+  Monday's reset shows its date (`Mon, Nov 9 1:59 PM EST`), not `Mon`.
+
 ### Changed
 
 - **The usage status line shows each window's own reset**: `5h 68% (resets 5:10 AM EST) · week 23%

@@ -95,6 +95,16 @@ export function pace(pct, threshold = DEFAULT_THRESHOLD) {
 
 const clampWake = (s) => Math.min(MAX_WAKE_S, Math.max(MIN_WAKE_S, Math.ceil(s)));
 
+// The window being waited for reset before its predicted time (limits sometimes reset early).
+// Usage within a window only rises, so it's a reset when nothing is at the threshold any more and
+// no window still resets at the time being waited for: that window rolled over to a new one.
+export function resetEarly({ windows, state = {}, now = Date.now(), threshold = DEFAULT_THRESHOLD }) {
+  const resumeAt = Date.parse(state.resumeAt);
+  if (!windows?.length || !Number.isFinite(resumeAt) || now >= resumeAt) return false;
+  if (windows.some((w) => w.pct >= threshold)) return false;
+  return !windows.some((w) => w.resetsAt != null && Math.abs(w.resetsAt - resumeAt) < 5 * 60_000);
+}
+
 // The heart of the skill: what to do now, given the usage reading (null when it failed).
 export function decide({ windows, state = {}, now = Date.now(), threshold = DEFAULT_THRESHOLD }) {
   const worst = windows?.[0] ?? null;
@@ -114,6 +124,7 @@ export function decide({ windows, state = {}, now = Date.now(), threshold = DEFA
   if (!Number.isFinite(resumeAt)) resumeAt = now;
   if (hotReset && hotReset > resumeAt) resumeAt = hotReset; // another window filled up meanwhile
   const out = { ...base, resumeAt: iso(resumeAt) };
+  if (resetEarly({ windows, state, now, threshold })) return { ...out, action: "resume", early: true, nextCheckSeconds: MIN_WAKE_S };
   if (now < resumeAt) return { ...out, action: "wait", nextCheckSeconds: clampWake((resumeAt - now) / 1000 + RESUME_GRACE_S) };
   if (hot.length) return { ...out, action: "wait", nextCheckSeconds: 300 }; // reset passed but the reading hasn't caught up
   return { ...out, action: "resume", nextCheckSeconds: MIN_WAKE_S };
@@ -432,8 +443,15 @@ async function wake() {
     const resumeAt = Date.parse(state.resumeAt) || Date.now();
     const wait = resumeAt + graceS() * 1000 - Date.now();
     if (wait > 0) {
-      await sleep(Math.min(wait, 10 * 60_000));
-      continue;
+      // While waiting, look at the shared reading (no extra calls while hooks keep it fresh) in
+      // case the window resets early.
+      const threshold = state.threshold ?? DEFAULT_THRESHOLD;
+      const { windows: reading } = await cachedWindows(Date.now(), threshold);
+      if (!resetEarly({ windows: reading, state, threshold })) {
+        await sleep(Math.min(wait, 10 * 60_000));
+        continue;
+      }
+      log(`waker ${process.pid}: the limit reset early`);
     }
     const { windows } = await readWindows();
     const d = decide({ windows, state, threshold: state.threshold ?? DEFAULT_THRESHOLD });
@@ -565,7 +583,8 @@ export async function runHook(raw, now = Date.now()) {
     // Only while waiting for the reset; once a resume has started it owns the restart, unless it
     // has been stuck for longer than a claim lasts.
     const stuck = st.phase === "resuming" && now - (Date.parse(st.resumingSince) || now) > STALE_CLAIM_MS;
-    if ((st.phase === "handoff" || stuck) && Date.parse(st.resumeAt) < now && !(st.waker?.pid && alive(st.waker.pid))) {
+    const due = Date.parse(st.resumeAt) < now || (st.phase === "handoff" && resetEarly({ windows, state: st, now, threshold }));
+    if ((st.phase === "handoff" || stuck) && due && !(st.waker?.pid && alive(st.waker.pid))) {
       writeState({ ...st, waker: armWaker({ ...st, waker: null }) });
     }
     return null;
@@ -585,7 +604,10 @@ const WINDOW_LABELS = { five_hour: "5h", seven_day: "week" };
 // localTime, shorter for the status line: "12:10 AM EST" today, "Sun 4:00 PM EST" within the week.
 export function shortLocalTime(ms, now = Date.now()) {
   const full = localTime(ms, now);
-  if (!full || ms - now >= 7 * 86_400_000 || new Date(ms).toDateString() === new Date(now).toDateString()) return full;
+  // A weekday alone only for 1 to 6 calendar days ahead: next Monday, seen on a Monday, needs its date.
+  const day = (t) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  const days = Math.round((day(ms) - day(now)) / 86_400_000);
+  if (!full || days < 1 || days > 6) return full;
   try {
     return `${new Date(ms).toLocaleDateString("en-US", { weekday: "short" })} ${clockTime(ms)}`;
   } catch { return full; }
@@ -603,7 +625,8 @@ export function statusText({ cache, state = {}, now = Date.now() }) {
     const label = `${WINDOW_LABELS[w.name] ?? w.name.replace(/_/g, "-")} ${Math.round(w.pct)}%`;
     return w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label;
   });
-  if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
+  if (state.phase === "handoff" && resetEarly({ windows, state, now, threshold: state.threshold ?? DEFAULT_THRESHOLD })) parts.push("reset early, resuming");
+  else if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
   else if (state.phase === "resuming") parts.push("resuming");
   const ageMin = cache.at ? Math.round((now - cache.at) / 60_000) : null;
   if (ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);

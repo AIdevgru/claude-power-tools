@@ -25,6 +25,10 @@ subscription with a 5-hour usage window.
    won't reopen a session that is still open.
    If the machine rebooted while waiting, the waker is gone; the first hook call after the reset,
    in any session, starts a new one, which resumes straight away.
+   Sometimes the limit resets before its predicted time. While it waits, the waker looks at the
+   shared reading every 10 minutes; once nothing is at the threshold and no window still resets
+   at the predicted time (the window rolled over), it resumes then instead of waiting. The status
+   line says `reset early, resuming` meanwhile.
 5. Every time Lee sees is in Lee's own time zone: the note says "resets 12:10 AM EST", the
    handoff's `Resets:` line reads `2026-11-02T05:10:00Z (12:10 AM EST)`, and `check` and
    `status` add `resumeAtLocal`. A reset on another day carries the date ("Mon, Nov 2 12:10 AM EST"). Times are 12-hour with AM or PM.
