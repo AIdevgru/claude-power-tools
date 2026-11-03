@@ -136,7 +136,7 @@ function credentials() {
   const file = path.join(dir, ".credentials.json");
   if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8")).claudeAiOauth;
   if (process.platform === "darwin") {
-    const raw = execFileSync("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { encoding: "utf8", timeout: 10_000 });
+    const raw = execFileSync("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { encoding: "utf8", timeout: 10_000, windowsHide: true });
     return JSON.parse(raw).claudeAiOauth;
   }
   throw new Error(`no Claude Code login found at ${fwd(file)}`);
@@ -160,7 +160,7 @@ export function loginStamp(env = process.env) {
 export async function fetchUsage() {
   if (process.env.USAGE_HANDOFF_FIXTURE) return JSON.parse(readFileSync(process.env.USAGE_HANDOFF_FIXTURE, "utf8"));
   if (process.env.USAGE_HANDOFF_CMD) {
-    return JSON.parse(execFileSync(process.env.USAGE_HANDOFF_CMD, { encoding: "utf8", shell: true, timeout: 30_000 }));
+    return JSON.parse(execFileSync(process.env.USAGE_HANDOFF_CMD, { encoding: "utf8", shell: true, timeout: 30_000, windowsHide: true }));
   }
   const cred = credentials();
   if (!cred?.accessToken) throw new Error("not logged in with a Claude subscription (no OAuth token)");
@@ -341,7 +341,7 @@ export function resolveClaude({ env = process.env, platform = process.platform, 
 
 function whichAll(name) {
   try {
-    const out = execFileSync(process.platform === "win32" ? "where" : "which", [name], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] });
+    const out = execFileSync(process.platform === "win32" ? "where" : "which", [name], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
     return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   } catch {
     return [];
@@ -385,7 +385,7 @@ export function launchCommand({ platform = process.platform, cwd, prompt, resume
 
 function onPath(name) {
   try {
-    execFileSync(process.platform === "win32" ? "where" : "which", [name], { stdio: "ignore", timeout: 5000 });
+    execFileSync(process.platform === "win32" ? "where" : "which", [name], { stdio: "ignore", timeout: 5000, windowsHide: true });
     return true;
   } catch {
     return false;
@@ -409,16 +409,34 @@ function launch(cwd, prompt, dryRun, resumeId = null) {
 
 const resumerLog = () => path.join(home(), "resumer.log");
 
-// Starts the hidden resume session in cwd. No window; its output goes to resumer.log.
+// How the hidden resume session is started. The waker has no console, so on Windows a detached
+// claude would have none either, and every program it runs (hooks, git, shells) would open its own
+// visible console window and take focus. Started attached with windowsHide, it gets one hidden
+// console that all of them share. Windows ends an attached child when its parent exits, so the
+// waker waits for the session to finish.
+export const resumerSpawn = (platform = process.platform) =>
+  platform === "win32" ? { detached: false, windowsHide: true, wait: true } : { detached: true, windowsHide: true, wait: false };
+
+// Starts the hidden resume session in cwd. No window; its output goes to resumer.log. done
+// resolves with its exit code when the waker has to wait for it, and is null otherwise.
 function startResumer(cwd) {
   const c = resumerCommand();
-  if (process.env.USAGE_HANDOFF_DRY_LAUNCH) return c; // tests
+  if (process.env.USAGE_HANDOFF_DRY_LAUNCH) return { ...c, done: null }; // tests
   mkdirSync(home(), { recursive: true });
   appendFileSync(resumerLog(), `\n--- ${iso(Date.now())} resume session in ${fwd(cwd)}\n`);
   const fd = openSync(resumerLog(), "a");
-  spawn(c.cmd, c.args, { cwd, detached: true, windowsHide: true, windowsVerbatimArguments: !!c.verbatim, stdio: ["ignore", fd, fd] }).unref();
+  const { wait, ...how } = resumerSpawn();
+  const child = spawn(c.cmd, c.args, { cwd, ...how, windowsVerbatimArguments: !!c.verbatim, stdio: ["ignore", fd, fd] });
   closeSync(fd);
-  return c;
+  if (!wait) {
+    child.unref();
+    return { ...c, done: null };
+  }
+  const done = new Promise((resolve) => {
+    child.on("exit", (code) => resolve(code));
+    child.on("error", (e) => resolve(`error: ${e.message}`));
+  });
+  return { ...c, done };
 }
 
 function log(msg) {
@@ -501,6 +519,7 @@ async function wake() {
       const cwd = state.cwd && existsSync(state.cwd) ? state.cwd : homedir();
       const c = startResumer(cwd);
       log(`waker ${process.pid}: started a hidden resume session for ${pending.length} handoff(s) in ${fwd(cwd)}: ${c.cmd} ${c.args.join(" ")}`);
+      if (c.done) log(`waker ${process.pid}: the resume session ended (exit ${await c.done})`);
     } catch (e) {
       log(`waker ${process.pid}: could not start the resume session: ${e.message}`);
     }
@@ -574,7 +593,7 @@ function ensureSkeleton(input, resumeAt, now) {
   if (existsSync(file) && isPending(parseHandoff(readFileSync(file, "utf8")))) return file;
   let branch = "-";
   try {
-    branch = execFileSync("git", ["-C", input.cwd, "branch", "--show-current"], { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] }).trim() || "-";
+    branch = execFileSync("git", ["-C", input.cwd, "branch", "--show-current"], { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).trim() || "-";
   } catch {}
   mkdirSync(handoffDir(), { recursive: true });
   writeFileSync(file, skeleton({ sessionId: input.session_id, cwd: input.cwd || process.cwd(), branch, resumeAt, now }));
@@ -676,7 +695,7 @@ async function rehearse() {
   };
   delete env.USAGE_HANDOFF_HOOK;
   delete env.USAGE_HANDOFF_CMD;
-  const run = (args, input = "") => execFileSync(process.execPath, [SCRIPT, ...args], { env, input, encoding: "utf8", cwd: work });
+  const run = (args, input = "") => execFileSync(process.execPath, [SCRIPT, ...args], { env, input, encoding: "utf8", cwd: work, windowsHide: true });
   const hook = (extra) => run(["--hook"], JSON.stringify({ hook_event_name: "PostToolUse", session_id: "rehearse-aaaa1111", cwd: work, tool_name: "Bash", ...extra }));
   const read = (name) => { try { return readFileSync(path.join(rhome, name), "utf8"); } catch { return ""; } };
   const state = () => { try { return JSON.parse(read("state.json")); } catch { return {}; } };

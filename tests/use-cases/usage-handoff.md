@@ -29,6 +29,10 @@ subscription with a 5-hour usage window.
    shared reading every 10 minutes; once nothing is at the threshold and no window still resets
    at the predicted time (the window rolled over), it resumes then instead of waiting. The status
    line says `reset early, resuming` meanwhile.
+   Lee is typing in another window when the hidden session starts, and nothing pops up or takes
+   focus: no console flashes up from finding `claude` or reading the branch, and the hooks, git and
+   shells the hidden session runs share one hidden console instead of each opening a window. On
+   Windows the waker stays until the hidden session ends, then logs its exit code.
 5. Every time Lee sees is in Lee's own time zone: the note says "resets 12:10 AM EST", the
    handoff's `Resets:` line reads `2026-11-02T05:10:00Z (12:10 AM EST)`, and `check` and
    `status` add `resumeAtLocal`. A reset on another day carries the date ("Mon, Nov 2 12:10 AM EST"). Times are 12-hour with AM or PM.
