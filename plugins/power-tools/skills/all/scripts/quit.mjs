@@ -9,8 +9,9 @@
 // end happens in a detached helper after a short delay, so the tool call returns and the turn
 // can finish first. Exit 2 means no Claude process was found, and nothing was ended.
 import { spawn, spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const SHELLS = new Set(["bash", "sh", "zsh", "fish", "dash", "pwsh", "powershell", "cmd", "conhost", "wsl"]);
 
@@ -101,4 +102,5 @@ function main(argv) {
   console.log(`closing this session (pid ${session.pid}) in 3 seconds`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main(process.argv.slice(2));
+// Compare real paths: a linked install runs this through a junction or symlink.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) main(process.argv.slice(2));
