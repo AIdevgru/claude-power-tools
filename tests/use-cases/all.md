@@ -13,6 +13,8 @@ a fifth session and is about to leave for the day.
    detached helper ends it 3 seconds later, after the turn's last line, `Closing this session.`
 5. Ana's terminal is back at her shell prompt. The other sessions carry on with the message.
 
+It works the same whether the skill was copied in or linked with `install.mjs --link`.
+
 If she types `/all` with no message, she gets the usage line and the session stays open. If no
 message reached anyone, the session also stays open. If the script can't find this session's
 process, it closes nothing and tells her to type `/exit`.

@@ -12,6 +12,7 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   message word for word to every row `ListAgents` shows and reports who got it. Then its
   `quit.mjs` walks up from its own process to this session's Claude process and ends only that one,
   3 seconds later. With no message, or when no message was delivered, the session stays open.
+  It works through a linked install too: the script compares real paths to tell it was run directly.
 
 ### Fixed
 

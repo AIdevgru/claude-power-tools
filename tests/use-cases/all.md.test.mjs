@@ -1,6 +1,9 @@
 // Use case: tests/use-cases/all.md
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { skillFile } from "../../scripts/layout.mjs";
@@ -55,4 +58,17 @@ test("parsePs reads ps output, and listProcesses sees this test's own process", 
   const me = listProcesses().find((p) => p.pid === process.pid);
   assert.ok(me, "this process is listed");
   assert.equal(me.ppid, process.ppid);
+});
+
+test("quit.mjs runs when started through a linked install (a junction or symlink)", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "cpt-all-"));
+  try {
+    const link = path.join(dir, "all");
+    symlinkSync(path.dirname(skillFile("all", "SKILL.md")), link, "junction");
+    const r = spawnSync(process.execPath, [path.join(link, "scripts", "quit.mjs"), "--dry-run"], { encoding: "utf8" });
+    // Inside a Claude session it names the process it would close; outside one it says it found none.
+    assert.match(r.stdout, /^(would close: pid \d+|Couldn't find this session's Claude process)/, `no output: ${r.stderr}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
