@@ -29,7 +29,7 @@ const firstParty = (file) => !VENDORED.has(rel(file));
 
 // The split the release plan settled on.
 const EXPECTED = {
-  "power-tools": ["combine-prs", "drain-pr-queue", "finish-pr", "fleet-manager", "fleet-status", "git-guard", "implement-to-pr", "issues-to-plan", "pr-dashboard", "request-inbox", "ticket-to-pr", "ticket-triage", "update", "usage-handoff"],
+  "power-tools": ["all", "combine-prs", "drain-pr-queue", "finish-pr", "fleet-manager", "fleet-status", "git-guard", "implement-to-pr", "issues-to-plan", "pr-dashboard", "request-inbox", "ticket-to-pr", "ticket-triage", "update", "usage-handoff"],
   "power-tools-ui": ["impeccable", "ui-critique-loop", "ui-finalize", "ux-mockup"],
   "power-tools-projects": ["deploy", "new-project", "project"],
 };

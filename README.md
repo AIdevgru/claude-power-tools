@@ -105,6 +105,7 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /fleet-status                     One card per running session, from their status lines
 /fleet-status send all "rebase on main and re-run your tests"
                                   Message every session at once
+/all "commit your work as WIP"    Message every agent, then close this session
 ```
 
 **Keep several sessions moving**
@@ -172,6 +173,7 @@ Skills marked † start only when you type them; Claude won't pick them on its o
 | Skill | What it does | Needs |
 |---|---|---|
 | **fleet-manager** | Reads the dashboard, session statuses and inbox; gives each blocker one owner; gets conflicts and red CI fixed; combines piled-up PRs; lists what only you can decide. Run as `/loop /fleet-manager`. | `pr-dashboard`, `combine-prs`, `request-inbox` |
+| **all** | `/all "<message>"` sends the message to every running agent and session, then closes this session. | — |
 | **fleet-status** | Reads each session's status line (asking only those whose line is stale), shows a card per session plus unclaimed tracker tickets, and lets you message the sessions you pick. | — |
 | **pr-dashboard** | Shows open PRs in merge order with CI, queue ETAs, owners and a "Needs you" list. A script gathers every fact. | Python 3.10+ |
 | **request-inbox** | Handles requests you drop in `.claude-inbox/`: claims each one, acts on it, and answers in the file. | — |
