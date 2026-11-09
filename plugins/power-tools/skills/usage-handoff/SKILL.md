@@ -1,9 +1,9 @@
 ---
 name: usage-handoff
-description: "Watches Claude usage limits (a hook, on by default). Near the top (95%) every session and subagent writes a handoff and stops; after the reset the work restarts from those handoffs. `/usage-handoff off` turns it off. Trigger on 'watch my usage' or 'hand off before the limit'."
+description: "Watches Claude usage limits (a hook, on by default). Near the top (95%) every session and subagent writes a handoff and stops; after the reset the work restarts from those handoffs. `off` turns it off; `accounts` shows each account's usage. Trigger on 'watch my usage' or 'hand off before the limit'."
 user-invocable: true
 disable-model-invocation: false
-argument-hint: "[check | resume | status | on | off | reset | rehearse | statusline] [--threshold N]  (default: check, threshold 95)"
+argument-hint: "[check | resume | status | on | off | reset | rehearse | statusline | accounts] [--threshold N]  (default: check, threshold 95)"
 allowed-tools: ListAgents, SendMessage, ToolSearch, Bash, Read, Write, ScheduleWakeup
 ---
 
@@ -27,7 +27,8 @@ Claude subscription usage has a 5-hour window and a weekly window. When either f
 - **`rehearse`**: `USAGE rehearse`. Runs the whole cycle in a scratch folder with made-up usage (96%, the note, the handoff, the waker, the reset, the hidden resume, back to watching) in about 10 seconds, without touching real sessions or starting Claude. Print its lines as they are. Its `note` lines are leftovers in the real state folder.
 - **`statusline`**: show the owner how to put usage in Claude Code's status line. Run `USAGE paths` and take its `script` path, then print this snippet for `~/.claude/settings.json` with that path, and ask before editing their settings (an existing `statusLine` would be replaced):
   `"statusLine": { "type": "command", "command": "node \"<script>\" statusline" }`
-  It prints e.g. `5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)` from the hooks' shared reading. It calls the usage endpoint only when the login changed since that reading, so it's right straight after `/login`. A plugin install's path changes with each version; a linked install's (`~/.claude/skills/usage-handoff/scripts`) doesn't.
+  It prints e.g. `lee@example.com (+1) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)` from the hooks' shared reading: the logged-in account, `(+1)` for each other account this machine knows, then each window and its reset. The whole line is a link (Ctrl+click; Cmd+click on macOS) to the accounts page, which lists every known account's usage and resets. It calls the usage endpoint only when the login changed since that reading, so it's right straight after `/login`. If the owner's terminal shows the link's escape codes as text, add `--no-link` after `statusline`. A plugin install's path changes with each version; a linked install's (`~/.claude/skills/usage-handoff/scripts`) doesn't.
+- **`accounts`**: `USAGE accounts`. Print its lines as they are: one per Claude account this machine has logged in to, the logged-in one starred, each with its plan, every window's usage and reset (`reset ... (was 97%)` once a reset has passed), and when it was logged in or last used, then the page's link. `accounts forget <email>` drops an account the owner no longer uses. `--json` gives the raw record.
 - **`--threshold N`**: the percentage that triggers handoffs (default 95). It's saved, so later ticks keep it.
 
 ## The hook
@@ -36,6 +37,7 @@ Registered by the plugin (and by the installer) for `UserPromptSubmit` and `Post
 
 - **Cost:** it reads usage from a cache shared by every session: re-read every 10 minutes when usage is low, every minute within 10 points of the threshold. Otherwise it reads a small file and exits.
 - **After a login:** the cache records which login the reading belongs to (a short hash of the token). When the owner logs in, logs out or the token is renewed, the next hook call or status line refresh reads again at once.
+- **Every account:** each fresh reading is filed under the account it was taken with (who's logged in comes from Claude Code's `.claude.json`, never the token) in `accounts.json`, beside the page `accounts.html`. After a switch to another login, the other accounts keep their last usage and resets, so the owner can see which one has room.
 - **At the threshold, once per session and once per subagent per window**, it adds a note to that conversation:
   - A **session** is told to stop starting work, collect state from its subagents, WIP-commit, and fill in its handoff. The hook has already created the file (`<handoffDir>/<folder>-<session id>.md`) with `Status: pending`, `SessionId`, `Cwd` and `Branch` filled in. The session adds its name and the sections.
   - A **subagent** is told to stop at a safe point and end with a report for its parent.

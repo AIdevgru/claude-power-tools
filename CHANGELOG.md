@@ -8,6 +8,14 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Added
 
+- **usage-handoff keeps track of every account you log in with.** Each usage reading is filed
+  under the account it was taken with (from Claude Code's `.claude.json`, never the token), in
+  `~/.claude/usage-handoff/accounts.json`. After `/login` to another account, the others keep
+  their last usage and resets. The status line now starts with the logged-in account
+  (`lee@example.com (+1) · 5h 64% (resets ...)`), and the whole line is a link to
+  `accounts.html`: a page with every account's usage meters, resets and countdowns.
+  `/usage-handoff accounts` prints the same list in the terminal; `accounts forget <email>`
+  drops one; `statusline --no-link` drops the link.
 - **`/all "<message>"` messages every running agent, then closes this session.** It sends the
   message word for word to every row `ListAgents` shows and reports who got it. Then its
   `quit.mjs` walks up from its own process to this session's Claude process and ends only that one,

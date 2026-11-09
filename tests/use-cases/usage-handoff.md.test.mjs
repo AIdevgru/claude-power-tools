@@ -9,6 +9,8 @@ import { skillFile, skillModule } from "../../scripts/layout.mjs";
 
 const HOME = mkdtempSync(path.join(tmpdir(), "usage-handoff-"));
 process.env.USAGE_HANDOFF_HOME = HOME;
+// Readings are filed under the logged-in account: keep the real login out of these tests.
+process.env.CLAUDE_CONFIG_DIR = mkdtempSync(path.join(tmpdir(), "usage-handoff-cfg-"));
 const {
   MESSAGED_STALE_MS, STALE_CLAIM_MS, cacheTtlMs, cachedWindows, claimResume, decide, handoffSlug, hasTranscript,
   hookEnabled, hookMessage, hookPlan, isPending, launchCommand, listHandoffs, localTime, markResumed, openSessions, pace,
