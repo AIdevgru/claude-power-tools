@@ -18,3 +18,23 @@ It works the same whether the skill was copied in or linked with `install.mjs --
 If she types `/all` with no message, she gets the usage line and the session stays open. If no
 message reached anyone, the session also stays open. If the script can't find this session's
 process, it closes nothing and tells her to type `/exit`.
+
+## At a set time
+
+Ana's usage limit resets at 5:30 in the morning. She wants every session to pick up again then,
+without her there.
+
+1. At 11pm she types `/all --at 5:30 continue`.
+2. The skill runs `scripts/at.mjs 5:30`. 5:30 has already passed today, so the script picks
+   tomorrow and prints `cron: 30 5 10 11 *` and `when: Tue, Nov 10, 5:30 AM EST`. It reads `5:30`,
+   `17:30`, `5:30am` and `7 pm`. A time like `25:00` or `soon` gets an error line, and nothing is
+   scheduled.
+3. It schedules a one-time job in this session with that expression. A scheduled prompt can't
+   start `/all` itself, so the job's prompt says the owner scheduled it, points at the skill's
+   send, report and close steps, and carries her message word for word.
+4. It replies with the run time and the job ID. It sends nothing yet and leaves the session open.
+5. At 5:30 the job fires once and is deleted. The session sends `continue` to every running
+   agent, reports, and closes, the same as a direct `/all continue`.
+
+The job lives only in this session, so closing the session before 5:30 cancels it. With no
+message after the time, she gets the usage line and nothing is scheduled.
