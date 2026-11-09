@@ -17,7 +17,11 @@
 //   hook on|off|status           Switch the hook below on or off for every session (default on).
 //   status | reset | paths   reset (and finish-resume) also remove old resume claims.
 //   rehearse                     Run the whole cycle in a scratch folder with made-up usage; exit 1 on a failure.
-//   statusline                   One line for Claude Code's status line, from the cached reading.
+//   statusline [--no-link]       One line for Claude Code's status line, from the cached reading:
+//                                the logged-in account and each window's usage and reset, as a
+//                                link to the accounts page.
+//   accounts [--json]            Every account this machine has logged in to, with its last usage
+//                                and resets. `accounts forget EMAIL` drops one.
 //
 //   --hook                       Hook mode (UserPromptSubmit, PostToolUse): reads hook JSON on stdin.
 //                                Reads usage from a shared cache (refreshed every 1-10 minutes,
@@ -31,17 +35,18 @@
 //   USAGE_HANDOFF_HOME     state, handoffs and logs (default: ~/.claude/usage-handoff)
 //   USAGE_HANDOFF_CMD      a command that prints usage JSON in the /api/oauth/usage shape
 //   USAGE_HANDOFF_FIXTURE  a JSON file to read instead (tests)
-//   CLAUDE_CONFIG_DIR      where Claude Code keeps .credentials.json (default: ~/.claude)
+//   CLAUDE_CONFIG_DIR      where Claude Code keeps .credentials.json (default: ~/.claude) and
+//                          .claude.json, which names the logged-in account (default: ~/.claude.json)
 //
 // The usage endpoint is the one Claude Code's /usage reads. It isn't a documented API, so every
 // failure is reported as action "unknown" instead of guessed.
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, closeSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, closeSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const DEFAULT_THRESHOLD = 95;
 export const MIN_WAKE_S = 60;
@@ -197,28 +202,178 @@ export function cacheTtlMs(pct, threshold = DEFAULT_THRESHOLD) {
 
 // force: read now (the /usage-handoff tick), but still share the reading with the hooks.
 // login: loginStamp() now. A reading taken under another login is stale whatever its age.
-export async function cachedWindows(now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, force = false, login = loginStamp()) {
+// identify: who is logged in (currentAccount); each reading is filed under that account.
+export async function cachedWindows(now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, force = false, login = loginStamp(), identify = currentAccount) {
   let cache = {};
   try { cache = JSON.parse(readFileSync(cacheFile(), "utf8")); } catch {}
   const pct = cache.windows?.[0]?.pct ?? null;
   const sameLogin = login == null || cache.login === login;
   const fresh = cache.at && now - cache.at < cacheTtlMs(pct, threshold) && sameLogin;
   const leased = cache.leaseAt && now - cache.leaseAt < 30_000; // another session is reading right now
-  if (!force && (fresh || leased)) return { windows: cache.windows ?? null, error: cache.error, cached: true };
+  if (!force && (fresh || leased)) {
+    const filed = fresh ? fileReading(cache, { now, login, identify }) : cache;
+    return { windows: cache.windows ?? null, error: cache.error, cached: true, account: filed.account ?? null };
+  }
   mkdirSync(home(), { recursive: true });
   writeFileSync(cacheFile(), JSON.stringify({ ...cache, leaseAt: now }));
   const r = await read();
-  writeFileSync(cacheFile(), JSON.stringify({ at: now, windows: r.windows, ...(r.error ? { error: r.error } : {}), ...(login != null ? { login } : {}) }));
-  return { ...r, cached: false };
+  const next = { at: now, windows: r.windows, ...(r.error ? { error: r.error } : {}), ...(login != null ? { login } : {}) };
+  writeFileSync(cacheFile(), JSON.stringify(next));
+  return { ...r, cached: false, account: fileReading(next, { now, login, identify }).account ?? null };
 }
 
 // The status line's reading. It never calls the endpoint for an old reading, only when the login
 // changed since the reading was taken (the owner just logged in, say), so the line is right at once.
-export async function statusCache({ now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, login = loginStamp() } = {}) {
-  const cache = readJson(cacheFile(), null);
-  if (login == null || cache?.login === login) return cache;
-  await cachedWindows(now, threshold, read, false, login);
-  return readJson(cacheFile(), cache);
+export async function statusCache({ now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, login = loginStamp(), identify = currentAccount } = {}) {
+  let cache = readJson(cacheFile(), null);
+  if (login != null && cache?.login !== login) {
+    await cachedWindows(now, threshold, read, false, login, identify);
+    cache = readJson(cacheFile(), cache);
+  }
+  return fileReading(cache, { now, login, identify });
+}
+
+// ---- accounts: every Claude account this machine has logged in to, and its last reading ----
+//
+// accounts.json keeps one entry per account (and organization): who it is, its plan, when it was
+// last logged in, and its last usage reading with each window's reset. Each fresh reading is filed
+// under the account it was taken with, so after a switch to another login the other accounts keep
+// their numbers and resets. accounts.html shows them all; the status line links to it.
+
+const accountsFile = () => path.join(home(), "accounts.json");
+export const accountsPage = () => path.join(home(), "accounts.html");
+export const accountsUrl = () => pathToFileURL(accountsPage()).href;
+const SETTLE_MS = 10_000;
+
+// "Max 5x", "Pro", "Team": from the organization type and rate-limit tier Claude Code saves.
+export function planLabel({ type, tier } = {}) {
+  const s = `${type ?? ""} ${tier ?? ""}`.toLowerCase();
+  if (s.includes("enterprise")) return "Enterprise";
+  if (s.includes("team")) return "Team";
+  const max = /max_(\d+)x/.exec(s);
+  if (max) return `Max ${max[1]}x`;
+  if (s.includes("max")) return "Max";
+  if (s.includes("pro")) return "Pro";
+  return null;
+}
+
+// Who is logged in, from what Claude Code saves at login (.claude.json's oauthAccount), never the
+// token. null when nobody is (or the usage comes from a test fixture). undefined while a login is
+// still being saved: the token is written a moment before the account, and a reading taken in
+// between must not be filed under the previous account, so it waits for the next call.
+export function currentAccount(login = loginStamp(), now = Date.now(), env = process.env) {
+  if (login === "none" || env.USAGE_HANDOFF_FIXTURE) return null;
+  const dir = env.CLAUDE_CONFIG_DIR;
+  try {
+    const age = now - statSync(path.join(dir || path.join(homedir(), ".claude"), ".credentials.json")).mtimeMs;
+    if (Math.abs(age) < SETTLE_MS) return undefined;
+  } catch {}
+  const files = dir
+    ? [path.join(dir, ".claude.json"), path.join(dir, ".config.json")]
+    : [path.join(homedir(), ".claude.json"), path.join(homedir(), ".claude", ".config.json")];
+  for (const f of files) {
+    const a = readJson(f, null)?.oauthAccount;
+    if (!a?.emailAddress && !a?.accountUuid) continue;
+    // A personal organization is named after its owner ("lee@example.com's Organization"): noise.
+    const team = /team|enterprise/i.test(a.organizationType ?? "");
+    return {
+      key: [a.accountUuid || a.emailAddress, a.organizationUuid].filter(Boolean).join("/"),
+      email: a.emailAddress ?? null,
+      name: a.displayName ?? null,
+      org: team ? a.organizationName ?? null : null,
+      plan: planLabel({ type: a.organizationType, tier: a.userRateLimitTier || a.organizationRateLimitTier }),
+    };
+  }
+  return null;
+}
+
+export function readAccounts(file = accountsFile()) {
+  const b = readJson(file, null);
+  return { current: b?.current ?? null, accounts: b?.accounts && typeof b.accounts === "object" ? b.accounts : {} };
+}
+
+// Readers (the status line, an open page) never see half a file.
+function writeAtomic(file, text) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, text);
+    renameSync(tmp, file);
+  } catch {
+    rmSync(tmp, { force: true });
+    writeFileSync(file, text);
+  }
+}
+
+export function writeAccounts(book, now = Date.now()) {
+  mkdirSync(home(), { recursive: true });
+  writeAtomic(accountsFile(), JSON.stringify(book, null, 2) + "\n");
+  writeAtomic(accountsPage(), accountsHtml(book, { now, threshold: readState().threshold ?? DEFAULT_THRESHOLD }));
+}
+
+// Files one reading under its account, which becomes the current one. Its windows and resets
+// replace the ones it had; a failed reading keeps its last good numbers and notes the error.
+// account null: nobody is logged in, so no account is current.
+export function recordReading(account, reading, now = Date.now()) {
+  const book = readAccounts();
+  if (!account) {
+    if (book.current !== null) {
+      book.current = null;
+      writeAccounts(book, now);
+    }
+    return book;
+  }
+  const prev = book.accounts[account.key] ?? { firstSeen: iso(now) };
+  if (prev.readAt && reading.at && Date.parse(prev.readAt) > reading.at) return book; // an older reading, filed late
+  const entry = { ...prev, email: account.email, name: account.name, org: account.org, plan: account.plan, lastSeen: iso(now) };
+  if (book.current !== account.key || !prev.since) entry.since = iso(now); // logged in (again)
+  if (reading.windows) {
+    entry.windows = reading.windows.map((w) => ({ name: w.name, pct: w.pct, resetsAt: w.resetsAt ? iso(w.resetsAt) : null }));
+    entry.readAt = iso(reading.at ?? now);
+    delete entry.error;
+    delete entry.errorAt;
+  } else if (reading.error) {
+    entry.error = reading.error;
+    entry.errorAt = iso(reading.at ?? now);
+  }
+  book.current = account.key;
+  book.accounts[account.key] = entry;
+  writeAccounts(book, now);
+  return book;
+}
+
+// Files the shared reading under the account it was taken with, once: the cache remembers the
+// account, so later calls only read a field. A reading from another login than the current one
+// is left alone; it was filed (or not) by the session that took it.
+export function fileReading(cache, { now = Date.now(), login = null, identify = currentAccount } = {}) {
+  if (!cache?.at || cache.account !== undefined) return cache;
+  if (login != null && cache.login !== login) return cache;
+  try {
+    const account = identify(cache.login ?? login, now);
+    if (account === undefined) return cache; // the login is still being saved: next call
+    const latest = readJson(cacheFile(), null);
+    if (latest?.at === cache.at) writeFileSync(cacheFile(), JSON.stringify({ ...latest, account }));
+    recordReading(account, cache, now);
+    return { ...cache, account };
+  } catch {
+    return cache; // filing is an extra: it never costs the reading
+  }
+}
+
+export function forgetAccount(match) {
+  const book = readAccounts();
+  const m = String(match ?? "").trim().toLowerCase();
+  const gone = Object.keys(book.accounts).filter((k) => m && (k.toLowerCase() === m || (book.accounts[k].email ?? "").toLowerCase() === m));
+  for (const k of gone) delete book.accounts[k];
+  if (gone.includes(book.current)) book.current = null;
+  if (gone.length) writeAccounts(book);
+  return gone.length;
+}
+
+// The current account first, then the most recently used.
+export function sortedAccounts(book) {
+  return Object.entries(book?.accounts ?? {})
+    .map(([key, a]) => ({ key, a, current: key === book.current }))
+    .sort((x, y) => Number(y.current) - Number(x.current) || (Date.parse(y.a.lastSeen) || 0) - (Date.parse(x.a.lastSeen) || 0));
 }
 
 export function hookEnabled(env = process.env) {
@@ -658,24 +813,214 @@ export function shortLocalTime(ms, now = Date.now()) {
   } catch { return full; }
 }
 
+// A fixed order (5h, then week, then any others), so a line doesn't reshuffle as usage moves.
+const windowOrder = (w) => { const i = Object.keys(WINDOW_LABELS).indexOf(w.name); return i < 0 ? 99 : i; };
+const byWindow = (a, b) => windowOrder(a) - windowOrder(b);
+const shortLabel = (name) => WINDOW_LABELS[name] ?? name.replace(/_/g, "-");
+const toMs = (v) => (typeof v === "number" ? v : Date.parse(v));
+
+// OSC 8: text the terminal opens as a link (Ctrl+click, or Cmd+click on macOS).
+export const hyperlink = (url, text) => `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
+
 // One short line for Claude Code's status line, from the shared cache only (no API call):
-// "5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)". Each window carries its own
-// reset, so it's clear which one resets when.
-export function statusText({ cache, state = {}, now = Date.now() }) {
-  // A fixed order (5h, then week, then any others), so the line doesn't reshuffle as usage moves.
-  const order = (w) => { const i = Object.keys(WINDOW_LABELS).indexOf(w.name); return i < 0 ? 99 : i; };
-  const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number").sort((a, b) => order(a) - order(b));
-  if (!windows.length) return cache?.error ? `usage: ${cache.error}` : "usage: no reading yet";
-  const parts = windows.map((w) => {
-    const label = `${WINDOW_LABELS[w.name] ?? w.name.replace(/_/g, "-")} ${Math.round(w.pct)}%`;
-    return w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label;
+// "lee@example.com (+1) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)".
+// Each window carries its own reset, so it's clear which one resets when. "(+1)" counts the other
+// accounts this machine knows; with link, the whole line opens the page that lists them all.
+export function statusText({ cache, state = {}, now = Date.now(), book = null, link = null }) {
+  const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number").sort(byWindow);
+  const account = cache?.account ?? null;
+  const others = Object.keys(book?.accounts ?? {}).filter((k) => k !== account?.key).length;
+  const parts = [];
+  if (account?.email) parts.push(others ? `${account.email} (+${others})` : account.email);
+  if (!windows.length) parts.push(cache?.error ? `usage: ${cache.error}` : "usage: no reading yet");
+  else {
+    for (const w of windows) {
+      const label = `${shortLabel(w.name)} ${Math.round(w.pct)}%`;
+      parts.push(w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label);
+    }
+    if (state.phase === "handoff" && resetEarly({ windows, state, now, threshold: state.threshold ?? DEFAULT_THRESHOLD })) parts.push("reset early, resuming");
+    else if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
+    else if (state.phase === "resuming") parts.push("resuming");
+    const ageMin = cache.at ? Math.round((now - cache.at) / 60_000) : null;
+    if (ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
+  }
+  if (!account?.email && others) parts.push(`${others} account${others === 1 ? "" : "s"}`);
+  const text = parts.join(" · ");
+  return link ? hyperlink(link, text) : text;
+}
+
+// ---- every account, for the terminal and the accounts page ----
+
+// One line per account, the logged-in one first and starred:
+// "* lee@example.com (Max 5x) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST) · logged in since 9:02 AM EST"
+// A reset that has passed since the reading says so: "5h reset 4:10 PM EST (was 97%)".
+export function accountsText(book, now = Date.now()) {
+  const rows = sortedAccounts(book);
+  if (!rows.length) return "No accounts recorded yet: usage is filed under the logged-in account each time it's read.";
+  return rows.map(({ key, a, current }) => {
+    const about = [a.plan, a.org].filter(Boolean).join(", ");
+    const parts = [`${a.email ?? key}${about ? ` (${about})` : ""}`];
+    const windows = (a.windows ?? []).filter((w) => typeof w.pct === "number").sort(byWindow);
+    for (const w of windows) {
+      const pct = Math.round(w.pct);
+      const t = toMs(w.resetsAt);
+      if (!Number.isFinite(t)) parts.push(`${shortLabel(w.name)} ${pct}%`);
+      else if (t <= now) parts.push(`${shortLabel(w.name)} reset ${shortLocalTime(t, now)} (was ${pct}%)`);
+      else parts.push(`${shortLabel(w.name)} ${pct}% (resets ${shortLocalTime(t, now)})`);
+    }
+    if (!windows.length) parts.push("no reading yet");
+    if (a.error) parts.push(`last read failed: ${a.error}`);
+    const seen = toMs(current ? a.since : a.lastSeen);
+    if (Number.isFinite(seen)) parts.push(`${current ? "logged in since" : "last used"} ${shortLocalTime(seen, now)}`);
+    return `${current ? "*" : " "} ${parts.join(" · ")}`;
+  }).join("\n");
+}
+
+const WINDOW_NAMES = { five_hour: "5-hour", seven_day: "Weekly", seven_day_opus: "Weekly, Opus", seven_day_sonnet: "Weekly, Sonnet" };
+const windowName = (n) => WINDOW_NAMES[n] ?? n.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// "2 h 5 min", "3 d 4 h": how far away a time is. The page's script uses this same function.
+export function span(ms) {
+  const m = Math.round(Math.abs(ms) / 60000);
+  if (m < 1) return "under a minute";
+  if (m < 60) return m + " min";
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? h + " h " + (m % 60) + " min" : h + " h";
+  const d = Math.floor(h / 24);
+  return h % 24 ? d + " d " + (h % 24) + " h" : d + " d";
+}
+const ago = (ms) => (ms < 60000 ? "just now" : span(ms) + " ago");
+
+// The meter's state: the fill turns amber within 15 points of the threshold and red at it.
+const meterLevel = (pct, threshold) => (pct >= threshold ? "full" : pct >= threshold - 15 ? "near" : "ok");
+
+function windowRow(w, now, threshold) {
+  const pct = Math.round(w.pct);
+  const t = toMs(w.resetsAt);
+  const known = Number.isFinite(t);
+  const level = meterLevel(w.pct, threshold);
+  const flag = level === "full" ? ' · <b class="flag">at the limit</b>' : level === "near" ? ' · <b class="flag">near the limit</b>' : "";
+  const when = known ? esc(shortLocalTime(t, now)) : "";
+  const live = known
+    ? `resets ${when} <span class="rel" data-until="${iso(t)}">${t > now ? `(in ${span(t - now)})` : ""}</span>${flag}`
+    : `${pct === 0 ? "starts at first use" : "no reset time"}${flag}`;
+  const name = esc(windowName(w.name));
+  return `<li class="win ${level}${known && t <= now ? " reset" : ""}"${known ? ` data-resets="${iso(t)}"` : ""}>
+      <span class="name">${name}</span>
+      <span class="meter" role="meter" aria-label="${name} usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${Math.min(100, Math.max(0, w.pct))}%"></span></span>
+      <span class="pct"><span class="live">${pct}%</span><span class="after">&ndash;</span></span>
+      <span class="when"><span class="live">${live}</span><span class="after">reset ${when} (was ${pct}%)</span></span>
+    </li>`;
+}
+
+function accountCard({ key, a, current }, now, threshold) {
+  const windows = (a.windows ?? []).filter((w) => typeof w.pct === "number").sort(byWindow);
+  const about = [a.name && a.name !== a.email ? a.name : null, a.plan, a.org].filter(Boolean).join(" · ");
+  const seenAt = toMs(current ? a.since : a.lastSeen);
+  const seen = Number.isFinite(seenAt) ? `${current ? "Logged in since" : "Last used"} ${esc(shortLocalTime(seenAt, now))}` : "";
+  const readAt = toMs(a.readAt);
+  const read = Number.isFinite(readAt) ? `read <span data-ago="${iso(readAt)}">${ago(now - readAt)}</span>` : "";
+  const foot = [seen, read].filter(Boolean).join(", ");
+  const errAt = toMs(a.errorAt);
+  return `<article class="account${current ? " current" : ""}">
+  <header><h2>${esc(a.email ?? key)}</h2>${current ? '<span class="badge">Logged in</span>' : ""}</header>
+  ${about ? `<p class="meta">${esc(about)}</p>` : ""}
+  ${windows.length ? `<ul class="windows">\n    ${windows.map((w) => windowRow(w, now, threshold)).join("\n    ")}\n  </ul>` : '<p class="empty">No usage read for this account yet.</p>'}
+  ${foot ? `<p class="foot">${foot}</p>` : ""}
+  ${a.error ? `<p class="error"><b>Last read failed${Number.isFinite(errAt) ? ` at ${esc(shortLocalTime(errAt, now))}` : ""}:</b> ${esc(a.error)}</p>` : ""}
+</article>`;
+}
+
+const PAGE_CSS = `
+:root { color-scheme: light dark; --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --line: rgba(11,11,11,.10); --accent: #2a78d6; --near: #fab219; --full: #d03b3b; }
+@media (prefers-color-scheme: dark) { :root { --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --line: rgba(255,255,255,.10); --accent: #3987e5; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 780px; margin: 0 auto; padding: 40px 20px 56px; }
+.top { margin-bottom: 24px; }
+h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+.top p, footer p { color: var(--ink-2); margin: 0; }
+.account { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 12px; }
+.account.current { box-shadow: inset 3px 0 0 var(--accent); }
+.account header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+h2 { font-size: 16px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.badge { font-size: 12px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 999px; padding: 1px 8px; }
+.meta { color: var(--ink-2); font-size: 13px; margin: 2px 0 0; }
+.windows { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.win { display: grid; grid-template-columns: 96px minmax(90px, 1fr) 44px minmax(0, 1.7fr); align-items: center; gap: 4px 12px; }
+.name, .when { color: var(--ink-2); font-size: 13px; }
+.meter { --fill: var(--accent); display: block; height: 8px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--fill) 18%, var(--surface)); }
+.meter > span { display: block; height: 100%; border-radius: 999px; background: var(--fill); }
+.win.near .meter { --fill: var(--near); }
+.win.full .meter { --fill: var(--full); }
+.win.reset .meter { --fill: var(--accent); }
+.win.reset .meter > span { width: 0 !important; }
+.pct { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.flag { color: var(--ink); font-weight: 600; }
+.win .after, .win.reset .live { display: none; }
+.win.reset .after { display: inline; }
+.empty { color: var(--ink-2); font-size: 13px; margin: 12px 0 0; }
+.foot { color: var(--ink-2); font-size: 12px; margin: 14px 0 0; }
+.error { font-size: 13px; margin: 6px 0 0; }
+.none { background: var(--surface); border: 1px dashed var(--line); border-radius: 10px; padding: 24px 20px; color: var(--ink-2); margin: 0; }
+footer { margin-top: 28px; font-size: 12px; }
+code { font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .win { grid-template-columns: 72px 1fr 44px; } .when { grid-column: 2 / -1; } }
+@media (forced-colors: active) { .meter { border: 1px solid CanvasText; } .meter > span { background: CanvasText; } }
+`;
+
+// The page keeps its relative times current, and greys out a window whose reset passes while it's open.
+const PAGE_JS = `${span.toString()}
+function tick() {
+  var now = Date.now();
+  document.querySelectorAll("[data-ago]").forEach(function (el) {
+    var d = now - Date.parse(el.dataset.ago);
+    el.textContent = d < 60000 ? "just now" : span(d) + " ago";
   });
-  if (state.phase === "handoff" && resetEarly({ windows, state, now, threshold: state.threshold ?? DEFAULT_THRESHOLD })) parts.push("reset early, resuming");
-  else if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
-  else if (state.phase === "resuming") parts.push("resuming");
-  const ageMin = cache.at ? Math.round((now - cache.at) / 60_000) : null;
-  if (ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
-  return parts.join(" · ");
+  document.querySelectorAll(".win[data-resets]").forEach(function (w) {
+    var t = Date.parse(w.dataset.resets);
+    w.classList.toggle("reset", t <= now);
+    var rel = w.querySelector("[data-until]");
+    if (rel) rel.textContent = t > now ? "(in " + span(t - now) + ")" : "";
+  });
+}
+tick();
+setInterval(tick, 30000);`;
+
+// accounts.html: one card per account with a meter per window and its reset. Static, so the
+// status line can link to it as a file; it reloads every minute to pick up new readings.
+export function accountsHtml(book, { now = Date.now(), threshold = DEFAULT_THRESHOLD } = {}) {
+  const rows = sortedAccounts(book);
+  const body = rows.length
+    ? rows.map((r) => accountCard(r, now, threshold)).join("\n")
+    : `<p class="none">No accounts yet. Each time usage-handoff reads your usage, it files it under the account you're logged in with. Send a prompt in any Claude Code session, then reload this page.</p>`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="60">
+<title>Claude accounts: usage and resets</title>
+<style>${PAGE_CSS}</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <h1>Claude accounts</h1>
+  <p>Usage and resets for each account this machine has logged in to. Updated ${esc(clockTime(now))} (<span data-ago="${iso(now)}">just now</span>).</p>
+</header>
+${body}
+<footer>
+  <p>An account you're not logged in to shows its last reading on this machine; what it used elsewhere since then isn't counted. Kept in <code>${esc(fwd(accountsFile()))}</code>; <code>/usage-handoff accounts forget &lt;email&gt;</code> drops an account. This page reloads every minute.</p>
+</footer>
+</main>
+<script>
+${PAGE_JS}
+</script>
+</body>
+</html>
+`;
 }
 
 // ---- rehearse ----
@@ -771,13 +1116,14 @@ async function main(argv) {
     case "check": {
       const threshold = Number(flag(args, "--threshold", state.threshold ?? DEFAULT_THRESHOLD));
       if (state.threshold !== threshold) writeState({ ...state, threshold });
-      const { windows, error } = await cachedWindows(Date.now(), threshold, readWindows, true);
+      const { windows, error, account } = await cachedWindows(Date.now(), threshold, readWindows, true);
       const d = decide({ windows, state, threshold });
       const handoffs = listHandoffs();
       return out({
         ...d,
         ...(d.resumeAt ? { resumeAtLocal: localTime(d.resumeAt) } : {}),
         phase: state.phase ?? "watching",
+        ...(account?.email ? { account: account.email } : {}),
         ...(error ? { error } : {}),
         windows: (windows ?? []).map((w) => ({ name: w.name, pct: w.pct, resetsAt: w.resetsAt ? iso(w.resetsAt) : null, resetsAtLocal: w.resetsAt ? localTime(w.resetsAt) : null })),
         handoffDir: fwd(handoffDir()),
@@ -855,12 +1201,27 @@ async function main(argv) {
     case "statusline": {
       // A status line command gets session JSON on stdin; this line needs none of it.
       const cache = await statusCache({ threshold: state.threshold ?? DEFAULT_THRESHOLD });
-      return out(statusText({ cache, state }));
+      const book = readAccounts();
+      try {
+        if (!existsSync(accountsPage())) writeAccounts(book); // so the link opens something from the start
+      } catch {} // the line matters more than the page
+      return out(statusText({ cache, state, book, link: args.includes("--no-link") ? null : accountsUrl() }));
+    }
+    case "accounts": {
+      if (args[0] === "forget") {
+        const who = args.slice(1).join(" ");
+        const n = forgetAccount(who);
+        return out(n ? `forgot ${who}` : `no account matches ${who || "(nothing given)"}`);
+      }
+      const book = readAccounts();
+      writeAccounts(book); // the page's times are as of now
+      if (args.includes("--json")) return out({ ...book, page: fwd(accountsPage()), url: accountsUrl() });
+      return out(`${accountsText(book)}\npage: ${accountsUrl()}`);
     }
     case "rehearse":
       return rehearse();
     case "paths":
-      return out({ home: fwd(home()), handoffs: fwd(handoffDir()), log: fwd(logFile()), script: fwd(SCRIPT) });
+      return out({ home: fwd(home()), handoffs: fwd(handoffDir()), log: fwd(logFile()), accounts: fwd(accountsPage()), script: fwd(SCRIPT) });
     default:
       console.error(`unknown command: ${cmd}`);
       return 2;
