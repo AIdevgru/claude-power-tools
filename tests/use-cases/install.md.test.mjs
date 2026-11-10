@@ -97,7 +97,8 @@ test("--with adds groups, --all is core + ui + projects, and graphify stays opt-
   const ui = dry("--with", "ui");
   assert.deepEqual(ui.installed, [...defaults(), ...skillsInGroups(["ui"])].sort());
   assert.ok(ui.installed.includes("impeccable") && ui.installed.includes("ui-critique-loop"));
-  assert.deepEqual(ui.agents, agentsFor(["impeccable"]));
+  assert.deepEqual(ui.agents, agentsFor(["impeccable", "screenreader"]));
+  assert.ok(ui.agents.includes("screenreader-persona.md"), ui.agents.join(", "));
   const all = dry("--all");
   assert.deepEqual(all.installed, skillsInGroups(["core", "ui", "projects"]));
   assert.deepEqual(all.installed, availableSkills().filter((s) => s !== "graphify"));
