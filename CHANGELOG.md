@@ -116,6 +116,15 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   one it belonged to.
 - **Times shown to the owner are 12-hour with AM or PM** (`12:10 AM EST`), in usage-handoff, the
   status line and the fleet-manager and fleet-status reports. Logs and handoff files keep UTC.
+- **ux-mockup follows four new design rules:**
+  - **Core flows first.** Stage 1 names the few tasks most users come to do. The mockup, the
+    critique and the persona reviews start there.
+  - **Fixers remove or fold before they add.** A fixer adds a feature only when removing or
+    folding can't fix the finding, and the Decisions log says why.
+  - **A score that sits steady between rounds is diagnosed.** The skill works out why and changes
+    the approach instead of repeating the same kind of fix.
+  - **The shared kit is updated if needed.** Reusable tokens and components go into the project's
+    shared mockup kit. A kit inside product code is left alone and goes into the plan instead.
 
 ## 0.7.0 (2026-11-02)
 

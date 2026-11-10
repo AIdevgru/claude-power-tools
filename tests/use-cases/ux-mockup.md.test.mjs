@@ -44,6 +44,38 @@ test("the stages run in order through real Impeccable commands", () => {
   assert.ok(SKILL.includes("power-tools-ui:impeccable"));
 });
 
+test("core flows come first: named in stage 1, run end to end, walked first by the personas", () => {
+  assert.match(SKILL, /\*\*Focus on the core flows\.\*\* Stage 1 names them/);
+  assert.match(SKILL, /Name the \*\*core flows\*\*/);
+  assert.match(SKILL, /every core flow runs from start to done/);
+  assert.match(SKILL, /walk each core flow from start to done before anything else/);
+  assert.match(SKILL, /\*\*Current state:\*\* the core flows/);
+});
+
+test("fixers are told to remove or fold before they add", () => {
+  assert.match(SKILL, /\*\*Fixers remove or fold before they add\.\*\*/);
+  assert.match(SKILL, /prefer removing an element, or folding it into one that already exists, over adding a feature/);
+  // Both fix loops repeat the rule, and an addition has to be justified in the log.
+  assert.match(SKILL, /Subagents apply the remediations, core flows first, removing or folding before adding/);
+  assert.match(SKILL, /with one writer per file, removing or folding before adding/);
+  assert.match(SKILL, /each addition a fixer made and why/);
+});
+
+test("a score that sits steady between rounds is diagnosed and the approach changes", () => {
+  assert.match(SKILL, /\*\*If a score sits steady between rounds, find out why and adjust\.\*\*/);
+  assert.match(SKILL, /don't run the same kind of fix again/);
+  assert.match(SKILL, /If the score sits steady between rounds, find out why and adjust before the next round/);
+  assert.match(SKILL, /If a rating sits steady between rounds, find out why and adjust/);
+  assert.match(SKILL, /each score that sat steady, with its cause and the change made/);
+});
+
+test("the shared kit is updated if needed, but never inside product code", () => {
+  assert.match(SKILL, /\*\*Update the shared kit if needed\.\*\*/);
+  assert.match(SKILL, /A kit inside product code is product code: don't edit it/);
+  assert.match(SKILL, /The only files it may link are the project's shared kit/);
+  assert.match(SKILL, /\*\*Shared kit:\*\* the kit changes made/);
+});
+
 test("the mockup and the plan go to the stated paths, with synthetic data", () => {
   assert.ok(SKILL.includes("docs/design/<feature-slug>/mockup/index.html"));
   assert.ok(SKILL.includes("docs/plans/<YYYY-MM-DD>-<feature-slug>-ux.md"));
