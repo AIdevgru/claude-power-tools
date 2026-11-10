@@ -42,7 +42,7 @@ The collection comes as three plugins. Install the ones you want:
 | Plugin | What you get |
 |---|---|
 | **power-tools** | Coordinating sessions, the delivery pipelines, git-guard and its hooks. Start here. |
-| **power-tools-ui** | The UI skills (`ux-mockup`, `ui-critique-loop`, `ui-finalize`) plus the bundled Impeccable. The pipelines use it for their UI gate when it's installed. |
+| **power-tools-ui** | The UI skills (`ux-mockup`, `ui-critique-loop`, `ui-finalize`, `screenreader`) plus the bundled Impeccable. The pipelines use it for their UI gate when it's installed. |
 | **power-tools-projects** | `new-project`, `project` and `deploy`. Needs **power-tools-ui** for the mockup and splash-page steps. |
 
 **Plugin** (recommended):
@@ -144,6 +144,8 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /ui-critique-loop --score 36 http://localhost:5173/settings
                                   Fixes and re-scores a page until it beats 36/40
 /ui-finalize src/routes/settings  Release finish: score gate, one bold idea you pick, harden, polish
+/screenreader http://localhost:5173 "join the newsletter"
+                                  A vision-impaired NVDA user tries it by keys and speech; barrier report
 ```
 
 **Projects** (power-tools-projects)
@@ -208,12 +210,14 @@ All three share one rule set, including one UI gate (`reference/delivery-rules.m
 These skills run real `/impeccable` commands for every design step, and add scoring gates,
 persona reviews and stopping rules around them. `ux-mockup` takes Impeccable's recommended
 options itself; `ui-finalize` stops and asks you to pick its one bold enhancement.
+`screenreader` is the exception: it tests with NVDA, not Impeccable, and runs on Windows only.
 
 | Skill | What it does | Needs |
 |---|---|---|
 | **ux-mockup** | Writes a UX plan backed by an interactive HTML mockup, iterated until its scores pass. Never changes product code. | `impeccable`, `ui-critique-loop` |
 | **ui-critique-loop** | Critiques, fixes and blindly re-scores a UI until its design score (out of 40) beats a threshold. | `impeccable` |
 | **ui-finalize** | Finishes a UI for release: score gate, one bold enhancement, harden, polish, and a final critique. | `impeccable`, `ui-critique-loop` |
+| **screenreader** | A vision-impaired persona does a task on a web page with NVDA's keys and speech only, never the screen. You get a report of every barrier, quoting what NVDA said. Sets up NVDA and its MCP server first. | Windows; NVDA 2026.3+, the [NVDA MCP](https://github.com/InfiArtt/nvda-mcp) add-on and uv, which it installs |
 
 ### Start and ship projects (power-tools-projects)
 
