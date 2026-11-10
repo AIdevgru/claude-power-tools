@@ -27,7 +27,7 @@ skills on her laptop.
 5. If `settings.json` is not valid JSON, the installer stops with a clear error
    instead of overwriting it.
 6. She also wants the UI skills: `--with ui` adds `ux-mockup`, `ui-critique-loop`,
-   `ui-finalize` and `impeccable`. Impeccable's four subagents
+   `ui-finalize`, `video` and `impeccable`. Impeccable's four subagents
    (`agents/impeccable-*.md`) are copied into `~/.claude/agents`, rewritten to
    point at the installed skill. If she already had an older Impeccable, the skill
    and its agents are both skipped, so the agents never point at a skill version

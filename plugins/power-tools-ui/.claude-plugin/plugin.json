@@ -1,9 +1,9 @@
 {
   "name": "power-tools-ui",
   "version": "0.7.0",
-  "description": "Score-gated UI work: interactive UX mockups, a blinded critique loop that fixes a UI until it scores above a threshold, a release-quality finish pass, and the bundled Impeccable skill.",
+  "description": "UI and video work: UX mockups, a blinded critique loop that fixes a UI until it beats a score, a release-quality finish pass, Remotion videos from a prompt, and the bundled Impeccable skill.",
   "author": { "name": "aidevgru" },
   "repository": "https://github.com/aidevgru/claude-power-tools",
   "license": "Apache-2.0",
-  "keywords": ["skills", "ui", "ux", "design", "mockup", "critique", "impeccable"]
+  "keywords": ["skills", "ui", "ux", "design", "mockup", "critique", "impeccable", "video", "remotion"]
 }

@@ -42,7 +42,7 @@ The collection comes as three plugins. Install the ones you want:
 | Plugin | What you get |
 |---|---|
 | **power-tools** | Coordinating sessions, the delivery pipelines, git-guard and its hooks. Start here. |
-| **power-tools-ui** | The UI skills (`ux-mockup`, `ui-critique-loop`, `ui-finalize`) plus the bundled Impeccable. The pipelines use it for their UI gate when it's installed. |
+| **power-tools-ui** | The UI skills (`ux-mockup`, `ui-critique-loop`, `ui-finalize`), `video` for Remotion videos, plus the bundled Impeccable. The pipelines use it for their UI gate when it's installed. |
 | **power-tools-projects** | `new-project`, `project` and `deploy`. Needs **power-tools-ui** for the mockup and splash-page steps. |
 
 **Plugin** (recommended):
@@ -144,6 +144,8 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /ui-critique-loop --score 36 http://localhost:5173/settings
                                   Fixes and re-scores a page until it beats 36/40
 /ui-finalize src/routes/settings  Release finish: score gate, one bold idea you pick, harden, polish
+/video "20 s teaser for our CLI, 3D logo spin, three feature cards" --size vertical
+                                  Storyboard, Remotion code, checked stills, then an MP4
 ```
 
 **Projects** (power-tools-projects)
@@ -205,15 +207,18 @@ All three share one rule set, including one UI gate (`reference/delivery-rules.m
 
 ### Design UI (power-tools-ui)
 
-These skills run real `/impeccable` commands for every design step, and add scoring gates,
+The first three run real `/impeccable` commands for every design step, and add scoring gates,
 persona reviews and stopping rules around them. `ux-mockup` takes Impeccable's recommended
-options itself; `ui-finalize` stops and asks you to pick its one bold enhancement.
+options itself; `ui-finalize` stops and asks you to pick its one bold enhancement. `video` makes
+an MP4 with [Remotion](https://www.remotion.dev), which is free for individuals and companies of
+up to 3 people; larger companies need a Remotion company license.
 
 | Skill | What it does | Needs |
 |---|---|---|
 | **ux-mockup** | Writes a UX plan backed by an interactive HTML mockup, iterated until its scores pass. Never changes product code. | `impeccable`, `ui-critique-loop` |
 | **ui-critique-loop** | Critiques, fixes and blindly re-scores a UI until its design score (out of 40) beats a threshold. | `impeccable` |
 | **ui-finalize** | Finishes a UI for release: score gate, one bold enhancement, harden, polish, and a final critique. | `impeccable`, `ui-critique-loop` |
+| **video** | Makes the video you describe: a storyboard, Remotion compositions (three.js for 3D), rendered stills it looks at and fixes, then the MP4. Picks the length, size and folder itself unless you say. | Node 20+, npm; downloads Remotion and a headless Chrome into the video's folder |
 
 ### Start and ship projects (power-tools-projects)
 
