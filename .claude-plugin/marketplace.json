@@ -13,7 +13,7 @@
     {
       "name": "power-tools-ui",
       "source": "./plugins/power-tools-ui",
-      "description": "UX mockups, a score-gated UI critique loop, a release-quality finish pass and NVDA screen reader tests, with the bundled Impeccable design skill.",
+      "description": "UX mockups, a score-gated UI critique loop, a release-quality finish pass, NVDA screen reader tests and Remotion videos from a prompt, with the bundled Impeccable design skill.",
       "category": "design"
     },
     {

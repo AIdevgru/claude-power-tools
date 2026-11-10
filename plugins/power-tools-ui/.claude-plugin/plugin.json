@@ -1,9 +1,9 @@
 {
   "name": "power-tools-ui",
   "version": "0.7.0",
-  "description": "Score-gated UI work: UX mockups, a blinded critique loop that fixes a UI until it beats a threshold, a release finish pass, NVDA screen reader tests, and the bundled Impeccable skill.",
+  "description": "UI and video work: UX mockups, a blinded critique loop that fixes a UI until it beats a score, a release finish pass, NVDA screen reader tests, Remotion videos and the bundled Impeccable skill.",
   "author": { "name": "aidevgru" },
   "repository": "https://github.com/aidevgru/claude-power-tools",
   "license": "Apache-2.0",
-  "keywords": ["skills", "ui", "ux", "design", "mockup", "critique", "impeccable", "accessibility", "screen-reader", "nvda"]
+  "keywords": ["skills", "ui", "ux", "design", "mockup", "critique", "impeccable", "accessibility", "screen-reader", "nvda", "video", "remotion"]
 }

@@ -42,7 +42,7 @@ The collection comes as three plugins. Install the ones you want:
 | Plugin | What you get |
 |---|---|
 | **power-tools** | Coordinating sessions, the delivery pipelines, git-guard and its hooks. Start here. |
-| **power-tools-ui** | The UI skills (`ux-mockup`, `ui-critique-loop`, `ui-finalize`, `screenreader`) plus the bundled Impeccable. The pipelines use it for their UI gate when it's installed. |
+| **power-tools-ui** | The UI skills (`ux-mockup`, `ui-critique-loop`, `ui-finalize`, `screenreader`), `video` for Remotion videos, plus the bundled Impeccable. The pipelines use it for their UI gate when it's installed. |
 | **power-tools-projects** | `new-project`, `project` and `deploy`. Needs **power-tools-ui** for the mockup and splash-page steps. |
 
 **Plugin** (recommended):
@@ -146,6 +146,8 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /ui-finalize src/routes/settings  Release finish: score gate, one bold idea you pick, harden, polish
 /screenreader http://localhost:5173 "join the newsletter"
                                   A vision-impaired NVDA user tries it by keys and speech; barrier report
+/video "20 s teaser for our CLI, 3D logo spin, three feature cards" --size vertical
+                                  Storyboard, Remotion code, checked stills, then an MP4
 ```
 
 **Projects** (power-tools-projects)
@@ -207,10 +209,12 @@ All three share one rule set, including one UI gate (`reference/delivery-rules.m
 
 ### Design UI (power-tools-ui)
 
-These skills run real `/impeccable` commands for every design step, and add scoring gates,
+The first three run real `/impeccable` commands for every design step, and add scoring gates,
 persona reviews and stopping rules around them. `ux-mockup` takes Impeccable's recommended
 options itself; `ui-finalize` stops and asks you to pick its one bold enhancement.
-`screenreader` is the exception: it tests with NVDA, not Impeccable, and runs on Windows only.
+`screenreader` and `video` don't use Impeccable. `screenreader` tests with NVDA and runs on
+Windows only. `video` makes an MP4 with [Remotion](https://www.remotion.dev), which is free for
+individuals and companies of up to 3 people; larger companies need a Remotion company license.
 
 | Skill | What it does | Needs |
 |---|---|---|
@@ -218,6 +222,7 @@ options itself; `ui-finalize` stops and asks you to pick its one bold enhancemen
 | **ui-critique-loop** | Critiques, fixes and blindly re-scores a UI until its design score (out of 40) beats a threshold. | `impeccable` |
 | **ui-finalize** | Finishes a UI for release: score gate, one bold enhancement, harden, polish, and a final critique. | `impeccable`, `ui-critique-loop` |
 | **screenreader** | A vision-impaired persona does a task on a web page with NVDA's keys and speech only, never the screen. You get a report of every barrier, quoting what NVDA said. Sets up NVDA and its MCP server first. | Windows; NVDA 2026.3+, the [NVDA MCP](https://github.com/InfiArtt/nvda-mcp) add-on and uv, which it installs |
+| **video** | Makes the video you describe: a storyboard, Remotion compositions (three.js for 3D), rendered stills it looks at and fixes, then the MP4. Picks the length, size and folder itself unless you say. | Node 20+, npm; downloads Remotion and a headless Chrome into the video's folder |
 
 ### Start and ship projects (power-tools-projects)
 
