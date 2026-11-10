@@ -5,8 +5,9 @@ not the UI or new-project skills competing for room in every session's skill lis
 
 1. She adds the marketplace once: `claude plugin marketplace add aidevgru/claude-power-tools`.
    It lists three plugins: `power-tools` (the fleet, PR and delivery skills plus
-   git-guard), `power-tools-ui` (UX mockups, the UI critique loop, the finish pass and
-   the bundled Impeccable with its four subagents) and `power-tools-projects`
+   git-guard), `power-tools-ui` (UX mockups, the UI critique loop, the finish pass,
+   the screen reader test with its persona subagent, and the bundled Impeccable with
+   its four subagents) and `power-tools-projects`
    (new project to deploy, and the project registry).
 2. She installs only `power-tools@aidevgru`. `/hooks` shows the git-guard hooks, the
    `/fleet-manager` debounce, the usage-handoff check and the request-inbox and doctor

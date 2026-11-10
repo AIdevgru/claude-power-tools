@@ -30,7 +30,7 @@ const firstParty = (file) => !VENDORED.has(rel(file));
 // The split the release plan settled on.
 const EXPECTED = {
   "power-tools": ["all", "combine-prs", "drain-pr-queue", "finish-pr", "fleet-manager", "fleet-status", "git-guard", "implement-to-pr", "issues-to-plan", "pr-dashboard", "request-inbox", "ticket-to-pr", "ticket-triage", "update", "usage-handoff"],
-  "power-tools-ui": ["impeccable", "ui-critique-loop", "ui-finalize", "ux-mockup"],
+  "power-tools-ui": ["impeccable", "screenreader", "ui-critique-loop", "ui-finalize", "ux-mockup"],
   "power-tools-projects": ["deploy", "new-project", "project"],
 };
 
@@ -89,9 +89,11 @@ test("each plugin's hooks run scripts inside that plugin, and only power-tools-u
     const agents = path.join(pluginDir(plugin), "agents");
     if (plugin !== "power-tools-ui") assert.ok(!existsSync(agents), `${plugin} has agents`);
   }
-  const agents = readdirSync(path.join(pluginDir("power-tools-ui"), "agents"));
-  assert.equal(agents.length, 4);
-  for (const a of agents) assert.match(a, /^impeccable-.+\.md$/);
+  // Each agent ships with its skill as agents/<skill>-*.md: Impeccable's four and the screen reader persona.
+  const agents = readdirSync(path.join(pluginDir("power-tools-ui"), "agents")).sort();
+  assert.equal(agents.length, 5);
+  assert.deepEqual(agents.filter((a) => !a.startsWith("impeccable-")), ["screenreader-persona.md"]);
+  for (const a of agents) assert.ok(pluginSkills("power-tools-ui").some((s) => a.startsWith(`${s}-`)), `${a} belongs to no power-tools-ui skill`);
 });
 
 test("no file in a plugin reaches outside its plugin folder with ../", () => {

@@ -8,6 +8,23 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Added
 
+- **`/screenreader <url> <task>` tests a page the way a vision-impaired NVDA user would.**
+  - **Setup:** the first run picks the screen reader and sets up the rest one step at a time,
+    asking before each install and before allowing key presses.
+    - It installs NVDA from NV Access and checks the SHA-1.
+    - It installs the [NVDA MCP](https://github.com/InfiArtt/nvda-mcp) add-on from its GitHub
+      release and checks the SHA-256.
+    - It registers the `nvda-mcp` server, pinned to the add-on's version.
+    - It lets MCP clients press keys, by default only in the default browser.
+    - JAWS is detected, but no MCP server drives it, so the skill offers NVDA.
+  - **Verify:** `verify` talks MCP to the registered server itself and checks NVDA's status
+    before the run.
+  - **The run:** a `screenreader-persona` subagent does the task. Its only tools are NVDA's key,
+    typing and speech tools, so it never sees the page.
+  - **The report:** `docs/accessibility/<date>-<slug>-screenreader.md` covers the outcome,
+    barriers by severity with what NVDA said, a WCAG criterion and a fix, the walk-through and
+    tester checks. A transcript of everything NVDA said goes with it.
+  - `/screenreader keys-off` stops key presses again. Windows only.
 - **usage-handoff keeps track of every account you log in with.** Each usage reading is filed
   under the account it was taken with (from Claude Code's `.claude.json`, never the token), in
   `~/.claude/usage-handoff/accounts.json`. After `/login` to another account, the others keep
