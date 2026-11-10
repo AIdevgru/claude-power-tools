@@ -468,6 +468,9 @@ test("end to end: sessions crossing the threshold at the same moment get one coo
   });
   try {
     const notes = await Promise.all(ids.map(run));
+    // A hook that finds another one reading usage right now hears nothing yet (the shared cache's
+    // lease); it's told on its next call.
+    for (let i = 0; i < ids.length; i++) if (!notes[i]) notes[i] = hook({ session_id: ids[i] });
     assert.equal(notes.filter((n) => /Wrap up/.test(n)).length, 4, "everyone is told");
     const coords = ids.filter((id, i) => /You coordinate this limit/.test(notes[i]));
     assert.equal(coords.length, 1, `one coordinator (${coords.join(", ")})`);
