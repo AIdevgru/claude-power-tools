@@ -21,6 +21,11 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   `quit.mjs` walks up from its own process to this session's Claude process and ends only that one,
   3 seconds later. With no message, or when no message was delivered, the session stays open.
   It works through a linked install too: the script compares real paths to tell it was run directly.
+- **`/all --at <time> "<message>"` does the same at a set time.** `at.mjs` reads `5:30`, `17:30`,
+  `5:30am` or `7 pm` and picks the next time the clock shows it, tomorrow if it has passed today.
+  The skill schedules one job in this session for then, and that job sends, reports and closes.
+  A scheduled `/all` prompt can't start the skill, since only the owner can, so the job's prompt
+  carries the steps itself. Nothing is sent or closed when you schedule it.
 
 ### Fixed
 
