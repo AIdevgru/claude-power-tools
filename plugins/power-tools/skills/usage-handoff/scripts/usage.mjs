@@ -3,8 +3,20 @@
 // shows), decides whether the fleet should write handoffs, and restarts the work once the limit
 // resets.
 //
-//   check [--threshold N]        JSON: usage, the action to take (watch | handoff | wait | resume |
-//                                unknown) and when to check next. N defaults to 95 (percent).
+//   check [--threshold N] [--finish-at N]
+//                                JSON: usage, the action to take (watch | handoff | wait | resume |
+//                                unknown) and when to check next. The threshold defaults to 95
+//                                (percent); --finish-at (default 99) is how far the finisher goes.
+//   await-handoffs --session-id ID
+//                                (the coordinator) Wait until every open session's handoff is
+//                                written (at most 9 minutes), then print this session's role (finish
+//                                or wait) and the restart job to schedule.
+//   job --id JOB --session-id ID | job --clear
+//                                Record (or forget) the scheduled restart job and which session has it.
+//   continue --session-id ID --round R --by NAME [--now]
+//                                (the scheduled restart job) expired | early | nothing | claimed |
+//                                continue. A job made under another login, or for an earlier limit,
+//                                is expired. --now (by hand) restarts even before the reset.
 //   mark-handoff --resume-at ISO --session NAME [--cwd DIR] [--no-waker]
 //                                Record that handoffs were requested; starts the background waker.
 //   claim-resume --by NAME       Exit 0 if NAME may run the resume now, 3 if another session has it.
@@ -35,6 +47,8 @@
 //   USAGE_HANDOFF_HOME     state, handoffs and logs (default: ~/.claude/usage-handoff)
 //   USAGE_HANDOFF_CMD      a command that prints usage JSON in the /api/oauth/usage shape
 //   USAGE_HANDOFF_FIXTURE  a JSON file to read instead (tests)
+//   USAGE_HANDOFF_ACCOUNT  the logged-in account as JSON {key, email} instead of .claude.json (tests)
+//   USAGE_HANDOFF_AWAIT_S  how long await-handoffs waits at most (default 540)
 //   CLAUDE_CONFIG_DIR      where Claude Code keeps .credentials.json (default: ~/.claude) and
 //                          .claude.json, which names the logged-in account (default: ~/.claude.json)
 //
@@ -55,6 +69,9 @@ export const RESUME_GRACE_S = 60; // the watcher's own wakeup lands this long af
 export const WAKER_GRACE_S = 180; // the background waker waits longer, so a live watcher wins
 export const STALE_CLAIM_MS = 30 * 60_000;
 export const MESSAGED_STALE_MS = 15 * 60_000;
+export const DEFAULT_FINISH_AT = 99; // the finisher stops here, leaving room to update its handoff
+export const AWAIT_S = 540; // under the 10-minute ceiling of one Bash call
+export const JOB_DELAY_S = 60; // the restart job runs this long after the reset, before the waker
 const SCRIPT = fileURLToPath(import.meta.url);
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 
@@ -64,6 +81,8 @@ const stateFile = () => path.join(home(), "state.json");
 const logFile = () => path.join(home(), "waker.log");
 const fwd = (p) => p.replace(/\\/g, "/");
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
+// A limit's round: when it started, to the millisecond, so two limits never share one.
+const roundId = (ms) => new Date(ms).toISOString();
 
 export function readState() {
   try {
@@ -73,9 +92,10 @@ export function readState() {
   }
 }
 
+// Atomic: a hook reading mid-write must never see "watching" and start a fresh round.
 export function writeState(state) {
   mkdirSync(home(), { recursive: true });
-  writeFileSync(stateFile(), JSON.stringify(state, null, 2) + "\n");
+  writeAtomic(stateFile(), JSON.stringify(state, null, 2) + "\n");
 }
 
 // Every usage window in the response that carries a percentage and a reset time.
@@ -195,6 +215,7 @@ const configFile = () => path.join(home(), "config.json");
 // How long a cached reading stays good: a minute near the threshold, ten when far below it.
 export function cacheTtlMs(pct, threshold = DEFAULT_THRESHOLD) {
   if (pct == null) return 10 * 60_000; // the last read failed: don't hammer the endpoint
+  if (pct >= threshold) return 30_000; // only the finisher (and sessions writing handoffs) still work
   if (pct >= threshold - 10) return 60_000;
   if (pct >= threshold - 20) return 5 * 60_000;
   return 10 * 60_000;
@@ -262,6 +283,9 @@ export function planLabel({ type, tier } = {}) {
 // still being saved: the token is written a moment before the account, and a reading taken in
 // between must not be filed under the previous account, so it waits for the next call.
 export function currentAccount(login = loginStamp(), now = Date.now(), env = process.env) {
+  if (env.USAGE_HANDOFF_ACCOUNT) {
+    try { return JSON.parse(env.USAGE_HANDOFF_ACCOUNT); } catch { return null; }
+  }
   if (login === "none" || env.USAGE_HANDOFF_FIXTURE) return null;
   const dir = env.CLAUDE_CONFIG_DIR;
   try {
@@ -424,12 +448,91 @@ export function parseHandoff(text) {
   return out;
 }
 
+// One "## Heading" section's text, without the heading.
+export function sectionText(text, heading) {
+  const lines = String(text).split(/\r?\n/);
+  const i = lines.findIndex((l) => l.trim().toLowerCase().startsWith(`## ${heading.toLowerCase()}`));
+  if (i < 0) return "";
+  const out = [];
+  for (const l of lines.slice(i + 1)) {
+    if (/^## /.test(l)) break;
+    out.push(l);
+  }
+  return out.join("\n").trim();
+}
+
+// A handoff its session has written: its name on the Session line and something under Next steps.
+// The hook's skeleton has neither.
+export function isFilled(text) {
+  const h = parseHandoff(text);
+  return Boolean(h.session && !h.session.startsWith("(fill in") && sectionText(text, "Next steps"));
+}
+
 export function listHandoffs(dir = handoffDir()) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => {
     const file = path.join(dir, f);
-    return { file: fwd(file), name: f.slice(0, -3), mtime: statSync(file).mtimeMs, ...parseHandoff(readFileSync(file, "utf8")) };
+    const text = readFileSync(file, "utf8");
+    return { file: fwd(file), name: f.slice(0, -3), mtime: statSync(file).mtimeMs, ...parseHandoff(text), filled: isFilled(text) };
   });
+}
+
+// The handoffs the coordinator still waits for: this limit's handoffs that aren't written yet and
+// whose session is still open. A session that closed (or ran out mid-turn) can't write any more.
+export function waitingOn({ state = {}, handoffs = [], open = new Map(), self = null }) {
+  const since = Date.parse(state.round) || 0;
+  return handoffs.filter((h) => isPending(h) && !h.filled && h.mtime >= since - 60_000 && h.sessionid && h.sessionid !== self && open.has(h.sessionid));
+}
+
+// A different account is logged in than the one that hit the limit. Only a definite change counts:
+// null (logged out, a test fixture) or undefined (a login still being saved) never does.
+export function loginChanged(state = {}, account) {
+  const was = state.account?.key;
+  return Boolean(was && account?.key && account.key !== was);
+}
+
+// ---- the restart job: a one-time scheduled task in one session, at the reset ----
+
+// A minute after the reset, never on :00 or :30 (the scheduler may run those up to 90 s early).
+export function jobTime(resumeAt, now = Date.now()) {
+  const t = Math.max(typeof resumeAt === "string" ? Date.parse(resumeAt) : resumeAt, now);
+  const d = new Date(Math.ceil((t + JOB_DELAY_S * 1000) / 60_000) * 60_000);
+  if (d.getMinutes() % 30 === 0) d.setMinutes(d.getMinutes() + 1);
+  return d;
+}
+
+// One day of the year, in local time: CronCreate reads cron in the owner's zone.
+export const cronAt = (d) => `${d.getMinutes()} ${d.getHours()} ${d.getDate()} ${d.getMonth() + 1} *`;
+
+export const jobPrompt = ({ sessionId, round }) =>
+  `Scheduled usage-handoff restart: the Claude usage limit should have reset. Run the usage-handoff skill with the argument "continue --session-id ${sessionId} --round ${round}". It checks the login hasn't changed, then tells every session to carry on.`;
+
+// What the session schedules with CronCreate (recurring false).
+export function jobSpec({ resumeAt, sessionId, round, now = Date.now() }) {
+  const at = jobTime(resumeAt, now);
+  return { cron: cronAt(at), runsAt: iso(at.getTime()), runsAtLocal: localTime(at.getTime(), now), prompt: jobPrompt({ sessionId, round }) };
+}
+
+// What the restart job does when it runs. decision: decide() on a fresh reading.
+// now: run by hand, so restart even before the reset (like resume).
+export function continuePlan({ state = {}, account, decision, sessionId = null, round = null, now = false, at = Date.now() }) {
+  if (now) return { action: "continue" };
+  // The hook or the waker already cancelled this round when the login changed.
+  if (round && state.expired?.round === round) {
+    return { action: "expired", why: `the login changed from ${state.expired.from ?? "the account that hit the limit"} to ${state.expired.to ?? "another account"}` };
+  }
+  if (state.phase === "handoff" && loginChanged(state, account)) {
+    return { action: "expired", why: `the login changed from ${state.account.email ?? "the account that hit the limit"} to ${account.email ?? "another account"}` };
+  }
+  if (round && state.round && round !== state.round) return { action: "expired", why: "it was made for an earlier limit" };
+  if (state.job?.sessionId && sessionId && state.job.sessionId !== sessionId) return { action: "expired", why: "a newer restart job in another session replaced it" };
+  if ((state.phase ?? "watching") === "watching") return { action: "nothing", why: "nothing is waiting for a reset" };
+  // The waker's hidden session (or another) is restarting everyone right now.
+  if (state.phase === "resuming" && at - (Date.parse(state.resumingSince) || 0) < STALE_CLAIM_MS) {
+    return { action: "nothing", why: "the sessions are already being restarted" };
+  }
+  if (state.phase === "handoff" && decision?.action === "wait") return { action: "early", resumeAt: decision.resumeAt };
+  return { action: "continue" };
 }
 
 export const isPending = (h) => /^pending\b/i.test(h.status ?? "");
@@ -626,11 +729,41 @@ const graceS = () => {
 // Resume claims from earlier resets. finish-resume and reset remove them.
 export function staleLocks(state = readState(), dir = home()) {
   let names = [];
-  try { names = readdirSync(dir).filter((n) => /^resume-.*\.lock$/.test(n)); } catch {}
-  const current = `resume-${String(state.resumeAt ?? "now").replace(/[^\w-]/g, "")}.lock`;
-  return names.filter((n) => state.phase === "watching" || n !== current).map((n) => path.join(dir, n));
+  try { names = readdirSync(dir).filter((n) => /^(resume|finisher)-.*\.lock$/.test(n)); } catch {}
+  const current = [`resume-${String(state.resumeAt ?? "now").replace(/[^\w-]/g, "")}.lock`, `finisher-${String(state.round ?? "now").replace(/[^\w-]/g, "")}.lock`];
+  return names.filter((n) => state.phase === "watching" || !current.includes(n)).map((n) => path.join(dir, n));
 }
 const clearLocks = (state) => { for (const f of staleLocks(state)) rmSync(f, { force: true }); };
+
+// Back to watching after a login change: the old account's restart (its job, finisher and waker)
+// no longer applies. Handoffs stay pending; `/usage-handoff resume` restarts them by hand.
+export function expireRound(state, account, now = Date.now()) {
+  const next = {
+    phase: "watching", ...KEEP(state), messaged: state.messaged ?? {},
+    expired: {
+      from: state.account?.email ?? state.account?.key ?? null, to: account?.email ?? account?.key ?? null,
+      round: state.round ?? null, job: state.job ?? null, at: iso(now),
+    },
+  };
+  writeState(next);
+  clearLocks(next);
+  // Sessions told about the old account's limit must hear about the new account's.
+  clearNotified();
+  return next;
+}
+
+// The rest of this limit's state, kept across the reset's watching phase.
+function KEEP(state) { return { threshold: state.threshold, finishAt: state.finishAt }; }
+
+// A limit starts a new round unless one is waiting for a reset that is still ahead. A phase stuck
+// at "resuming" (the resume session stopped early) doesn't hold the next limit back.
+export function freshRound(state = {}, now = Date.now()) {
+  if (state.phase !== "handoff") return true;
+  const cur = Date.parse(state.resumeAt);
+  return Number.isFinite(cur) && cur <= now;
+}
+
+const accountField = (account) => (account?.key ? { account: { key: account.key, email: account.email ?? null } } : {});
 
 // Background process: wait for the reset, then start one Claude session that runs the resume.
 async function wake() {
@@ -639,8 +772,16 @@ async function wake() {
   for (let i = 0; i < 10_000; i++) {
     const state = readState();
     if (state.phase === "watching" || state.waker?.pid !== process.pid) return log(`waker ${process.pid}: not needed any more, exiting`);
+    // The restart belongs to the account that hit the limit; another login cancels it.
+    const account = state.phase === "handoff" ? currentAccount() : null;
+    if (state.phase === "handoff" && loginChanged(state, account)) {
+      expireRound(state, account);
+      return log(`waker ${process.pid}: the login changed to ${account.email ?? "another account"}, so the restart for ${state.account.email ?? "the old account"} is cancelled`);
+    }
     const resumeAt = Date.parse(state.resumeAt) || Date.now();
-    const wait = resumeAt + graceS() * 1000 - Date.now();
+    // A session's restart job runs a minute after the reset; give it time before starting another.
+    const jobGrace = state.job?.sessionId && openSessions().has(state.job.sessionId) ? 600 : 0;
+    const wait = resumeAt + (graceS() + jobGrace) * 1000 - Date.now();
     if (wait > 0) {
       // While waiting, look at the shared reading (no extra calls while hooks keep it fresh) in
       // case the window resets early.
@@ -661,7 +802,9 @@ async function wake() {
     }
     const pending = listHandoffs().filter(isPending);
     if (!pending.length) {
-      writeState({ ...readState(), phase: "watching", waker: null, lastResumeAt: iso(Date.now()) });
+      const cur = readState();
+      writeState({ phase: "watching", ...KEEP(cur), messaged: cur.messaged ?? {}, lastResumeAt: iso(Date.now()) });
+      clearLocks({ phase: "watching" });
       return log(`waker ${process.pid}: usage reset, no pending handoffs, nothing to start`);
     }
     const claim = claimResume("waker", state);
@@ -686,6 +829,7 @@ async function wake() {
 
 const notifiedFile = () => path.join(home(), "notified.json");
 const readJson = (file, fallback) => { try { return JSON.parse(readFileSync(file, "utf8")); } catch { return fallback; } };
+function clearNotified() { try { rmSync(notifiedFile(), { force: true }); } catch {} }
 // The time of day in the owner's zone, 12-hour: "12:10 AM EST".
 export function clockTime(ms) {
   // Newer ICU puts a narrow no-break space before AM/PM; a plain space reads the same everywhere.
@@ -717,30 +861,92 @@ export function skeleton({ sessionId, cwd, branch = "-", resumeAt, now = Date.no
 
 // What one hook call should do, without side effects: null to stay quiet, or who to tell what.
 // Each session and each subagent hears it once per usage window.
-export function hookPlan({ input, windows, threshold = DEFAULT_THRESHOLD, notified = {}, now = Date.now() }) {
+// The windows at or over the threshold, and the latest of their resets.
+function hotWindows(windows, threshold, now) {
   // A reading whose reset time has passed is stale: the window is already empty again.
   const hot = (windows ?? []).filter((w) => w.pct >= threshold && (w.resetsAt == null || w.resetsAt > now));
-  if (!hot.length || !input?.session_id) return null;
-  const resumeAt = Math.max(...hot.map((w) => w.resetsAt ?? now + MAX_WAKE_S * 1000));
-  const key = `${input.session_id}:${input.agent_id || "main"}`;
-  if (notified[key] && Date.parse(notified[key]) > now) return null;
-  return { key, resumeAt, pct: hot[0].pct, window: hot[0].name, subagent: Boolean(input.agent_id) };
+  return { hot, resumeAt: hot.length ? Math.max(...hot.map((w) => w.resetsAt ?? now + MAX_WAKE_S * 1000)) : null };
 }
 
-export function hookMessage(plan, file) {
-  const head = `usage-handoff: Claude usage is at ${plan.pct}% of the ${plan.window.replace(/_/g, "-")} limit (resets ${localTime(plan.resumeAt)}).`;
+// The reset moved later: a hot window with a known reset more than a minute past the recorded one.
+// (Stored times drop the fraction of a second, and a window with no reset time is a guess.)
+export function movedReset(windows, threshold, resumeAt, now = Date.now()) {
+  const cur = typeof resumeAt === "string" ? Date.parse(resumeAt) : resumeAt;
+  const known = hotWindows(windows, threshold, now).hot.filter((w) => w.resetsAt != null).map((w) => w.resetsAt);
+  const later = known.length ? Math.max(...known) : null;
+  return later && (!Number.isFinite(cur) || later > cur + 60_000) ? later : null;
+}
+
+// finisher: the session using up the rest of the window. It (and its subagents) keep working until
+// its finishAt, and then hear once more: stop.
+export function hookPlan({ input, windows, threshold = DEFAULT_THRESHOLD, notified = {}, now = Date.now(), finisher = null }) {
+  if (!input?.session_id) return null;
+  const finishing = finisher?.sessionId === input.session_id;
+  const key = `${input.session_id}:${input.agent_id || (finishing ? "finish" : "main")}`;
+  if (notified[key] && Date.parse(notified[key]) > now) return null;
+  const extra = finishing && !input.agent_id ? { finish: true } : {};
+  // The finisher works above the threshold, so it must see the usage: no reading means stop.
+  if (finishing && !windows) {
+    const resumeAt = Date.parse(finisher.resumeAt) || now + MAX_WAKE_S * 1000;
+    return { key, resumeAt, pct: null, window: null, subagent: Boolean(input.agent_id), noReading: true, ...extra };
+  }
+  const { hot, resumeAt } = hotWindows(windows, finishing ? finisher.finishAt : threshold, now);
+  if (!hot.length) return null;
+  return { key, resumeAt, pct: hot[0].pct, window: hot[0].name, subagent: Boolean(input.agent_id), ...extra };
+}
+
+// role: { coordinator, sessionId, finishAt, script } for the session that coordinates this limit.
+export function hookMessage(plan, file, role = {}) {
+  const local = localTime(plan.resumeAt);
+  const window = String(plan.window ?? "usage").replace(/_/g, "-");
+  const blind = `usage-handoff: the usage reading failed, so this session can't see how much of the window is left (resets ${local}).`;
+  const head = plan.noReading ? blind : `usage-handoff: Claude usage is at ${plan.pct}% of the ${window} limit (resets ${local}).`;
   if (plan.subagent) {
     return `${head} Stop at the next safe point: finish or undo the step you're on, start nothing new, and end with a short report for your parent session: your goal, what's done, what's left, your worktree and branch, and any uncommitted changes.`;
   }
-  return [
+  if (plan.finish) {
+    return [
+      plan.noReading ? `${blind} Stop now:` : `usage-handoff: Claude usage is at ${plan.pct}% of the ${window} limit, as far as this session was to go (resets ${local}). Stop now:`,
+      "1. Finish or undo the step you're on and start nothing new. Ask any subagent you have running to stop at a safe point and report.",
+      `2. Update your handoff at ${fwd(file)} so its Done and Next steps say where you are now. Leave its Status line as pending.`,
+      "3. Check with CronList (load it with ToolSearch if it's deferred) that your restart job is still scheduled. Keep this session open: the job runs only while it is.",
+      `4. End your turn. At the reset (${local}) the job tells every session to carry on.`,
+    ].join("\n");
+  }
+  const lines = [
     `${head} Wrap up before it runs out:`,
     "1. Stop starting new work, and don't launch new subagents.",
     "2. Tell each subagent you have running (SendMessage to its id) to stop at a safe point and report its goal, what's done, what's left, its worktree and branch, and any uncommitted changes.",
     "3. Save uncommitted work as a WIP commit on your own branch if the repo's rules allow (never git stash).",
     `4. Fill in your handoff at ${fwd(file)}: Read it, put your session name on the Session line, and write each section so a fresh session could carry on.`,
-    `5. End your turn. After the reset (${localTime(plan.resumeAt)}) this session is reopened or messaged and told to resume from that file. When you tell the owner a time, use their local time as written here, not UTC.`,
-    "The owner can turn this off with /usage-handoff off.",
+  ];
+  if (role.coordinator) {
+    const node = `node "${fwd(role.script ?? SCRIPT)}"`;
+    lines.push(
+      `5. You coordinate this limit. Once your handoff is written, run \`${node} await-handoffs --session-id ${role.sessionId}\` with Bash (timeout 600000). It waits, without using usage, until the other open sessions have written theirs (at most 9 minutes), then prints your role and a restart job.`,
+      `6. Schedule the restart: CronCreate with its job.cron, recurring false, and its job.prompt word for word (if CronCreate is deferred, load it with ToolSearch "select:CronCreate,CronDelete,CronList"). Then run \`${node} job --id <the job id CronCreate returned> --session-id ${role.sessionId}\`. Keep this session open: the job runs only while it is. If job is null, nothing is waiting for a reset any more: skip this step.`,
+      `7. If its role is "finish", use up the rest of this window: carry on with your handoff's Next steps, keeping the handoff current, until the hook tells you to stop${role.finishAt ? ` (at ${role.finishAt}%)` : ""}. Otherwise end your turn. When you tell the owner a time, use their local time as written here, not UTC.`,
+    );
+  } else {
+    lines.push(`5. End your turn. After the reset (${local}) this session is reopened or messaged and told to resume from that file. When you tell the owner a time, use their local time as written here, not UTC.`);
+  }
+  lines.push("The owner can turn this off with /usage-handoff off.");
+  return lines.join("\n");
+}
+
+// The note for a session whose restart job no longer matches the limit: the reset moved.
+export function jobMovedMessage(job, spec, sessionId, script = SCRIPT) {
+  const node = `node "${fwd(script)}"`;
+  return [
+    `usage-handoff: the reset you're waiting for moved to ${localTime(spec.runsAt)}, so your restart job (${job.id}) would run too early.`,
+    `Replace it: CronDelete ${job.id}, then CronCreate with cron "${spec.cron}", recurring false, and this prompt word for word (load both with ToolSearch "select:CronCreate,CronDelete" if they're deferred): ${spec.prompt}`,
+    `Then run \`${node} job --id <the new job id> --session-id ${sessionId}\`, and carry on with what you were doing.`,
   ].join("\n");
+}
+
+export function loginMessage(expired, pending, job, sessionId) {
+  const mine = job?.id && job.sessionId === sessionId ? ` Delete your restart job with CronDelete ${job.id} (load it with ToolSearch if it's deferred).` : "";
+  return `usage-handoff: the login changed from ${expired.from ?? "the account that hit the limit"} to ${expired.to ?? "another account"}, so the restart scheduled for the old account's reset is cancelled.${mine}${pending ? ` ${pending} handoff(s) are still pending; /usage-handoff resume restarts them now, on this account.` : ""}`;
 }
 
 function ensureSkeleton(input, resumeAt, now) {
@@ -755,16 +961,34 @@ function ensureSkeleton(input, resumeAt, now) {
   return file;
 }
 
-// The first session to see the threshold records the reset and starts the waker; later ones only
-// make sure a waker is still running.
-function ensureArmed(resumeAt, cwd, now) {
-  const st = readState();
+// A new limit starts a round: its time, the account that hit it, and (from the first main session
+// the hook tells) its coordinator. A later reset (another window filled) moves the wait.
+export function armedState(st, { resumeAt, cwd, now, sessionId = null, account = null }) {
   const cur = Date.parse(st.resumeAt);
-  const next = st.phase === "watching" || !Number.isFinite(cur) || cur < resumeAt
-    ? { ...st, phase: "handoff", resumeAt: iso(resumeAt), cwd: fwd(cwd || process.cwd()), requestedAt: iso(now), messaged: {} }
-    : st;
-  next.waker = armWaker(next);
+  let next = st;
+  if (freshRound(st, now)) {
+    next = {
+      ...KEEP(st), phase: "handoff", resumeAt: iso(resumeAt), cwd: fwd(cwd || process.cwd()),
+      requestedAt: iso(now), round: roundId(now), ...accountField(account), messaged: {},
+    };
+  } else if (!Number.isFinite(cur) || cur + 60_000 < resumeAt) {
+    next = { ...st, resumeAt: iso(resumeAt), requestedAt: iso(now), messaged: {}, round: st.round ?? roundId(now) };
+  }
+  if (sessionId && !next.coordinator) next = { ...next, coordinator: { sessionId, at: iso(now) } };
+  return next;
+}
+
+// The first session to see the threshold records the reset and starts the waker; later ones only
+// make sure a waker is still running. Returns the state.
+function ensureArmed(resumeAt, cwd, now, sessionId = null, account = null) {
+  const st = readState();
+  const fresh = freshRound(st, now);
+  const armed = armedState(st, { resumeAt, cwd, now, sessionId, account: fresh ? account ?? currentAccount() : null });
+  const waker = armWaker(armed);
+  if (armed === st && waker === st.waker) return st; // nothing changed: don't rewrite the file
+  const next = { ...armed, waker };
   writeState(next);
+  return next;
 }
 
 export async function runHook(raw, now = Date.now()) {
@@ -772,10 +996,49 @@ export async function runHook(raw, now = Date.now()) {
   const input = JSON.parse(raw || "{}");
   const event = input.hook_event_name;
   if (event !== "UserPromptSubmit" && event !== "PostToolUse") return null;
-  const threshold = readState().threshold ?? DEFAULT_THRESHOLD;
-  const { windows } = await cachedWindows(now, threshold);
+  let st = readState();
+  const threshold = st.threshold ?? DEFAULT_THRESHOLD;
+  const { windows, account } = await cachedWindows(now, threshold);
   const notified = readJson(notifiedFile(), {});
-  const plan = hookPlan({ input, windows, threshold, notified, now });
+  const tell = (key, text) => {
+    for (const [k, v] of Object.entries(notified)) if (Date.parse(v) < now - 24 * 3600_000) delete notified[k];
+    notified[key] = iso(now + 24 * 3600_000);
+    writeFileSync(notifiedFile(), JSON.stringify(notified, null, 2));
+    return { hookSpecificOutput: { hookEventName: event, additionalContext: text } };
+  };
+
+  if (st.phase === "handoff") {
+    if (loginChanged(st, account)) {
+      // The restart is locked to the account that hit the limit: another login cancels it.
+      // (account: who the shared reading was taken as; a new login re-reads at once.)
+      st = expireRound(st, account, now);
+      for (const k of Object.keys(notified)) delete notified[k];
+    } else {
+      // Usage moved on: another window filled up, so the reset is later. Follow it, and tell the
+      // session holding the restart job to move it.
+      const later = movedReset(windows, threshold, st.resumeAt, now);
+      if (later) st = ensureArmed(later, st.cwd, now);
+      const job = st.job;
+      if (job?.sessionId === input.session_id && !input.agent_id && st.phase === "handoff" && job.resumeAt !== st.resumeAt) {
+        const key = `${input.session_id}:job:${st.resumeAt}`;
+        if (!notified[key]) return tell(key, jobMovedMessage(job, jobSpec({ resumeAt: st.resumeAt, sessionId: input.session_id, round: st.round, now }), input.session_id));
+      }
+    }
+  }
+  // A login change cancelled the round (in this hook, another session's, the waker or the job).
+  // Tell the first main session to come by, and the session that held the restart job.
+  const ex = st.phase === "watching" ? st.expired : null;
+  if (ex?.at && !input.agent_id && now - Date.parse(ex.at) < 24 * 3600_000) {
+    const all = `login:${ex.at}`;
+    const mine = `${input.session_id}:login:${ex.at}`;
+    if (!notified[mine] && (!notified[all] || ex.job?.sessionId === input.session_id)) {
+      notified[all] = iso(now + 24 * 3600_000);
+      return tell(mine, loginMessage(ex, listHandoffs().filter(isPending).length, ex.job, input.session_id));
+    }
+  }
+
+  const finisher = st.phase === "handoff" && st.finisher?.round === st.round ? { ...st.finisher, resumeAt: st.resumeAt } : null;
+  const plan = hookPlan({ input, windows, threshold, notified, now, finisher });
   if (!plan) {
     // A restart is due but its waker is gone (the machine rebooted, say): start one, and it
     // resumes right away.
@@ -793,8 +1056,78 @@ export async function runHook(raw, now = Date.now()) {
   for (const [k, v] of Object.entries(notified)) if (Date.parse(v) < now - 24 * 3600_000) delete notified[k];
   notified[plan.key] = iso(plan.resumeAt);
   writeFileSync(notifiedFile(), JSON.stringify(notified, null, 2));
-  ensureArmed(plan.resumeAt, input.cwd, now);
-  return { hookSpecificOutput: { hookEventName: event, additionalContext: hookMessage(plan, file) } };
+  const armed = ensureArmed(plan.resumeAt, input.cwd, now, plan.subagent || plan.finish ? null : input.session_id, account);
+  const finishAt = armed.finishAt ?? DEFAULT_FINISH_AT;
+  const role = !plan.subagent && !plan.finish && armed.coordinator?.sessionId === input.session_id
+    ? { coordinator: true, sessionId: input.session_id, finishAt: finishAt > threshold ? finishAt : null }
+    : {};
+  return { hookSpecificOutput: { hookEventName: event, additionalContext: hookMessage(plan, file, role) } };
+}
+
+// ---- the coordinator: wait for the handoffs, then pick the finisher and the restart job ----
+
+const awaitS = () => {
+  const v = Number(process.env.USAGE_HANDOFF_AWAIT_S);
+  return Number.isFinite(v) && v >= 0 && process.env.USAGE_HANDOFF_AWAIT_S !== "" ? v : AWAIT_S;
+};
+
+// One finisher per limit, even if two sessions ask at once.
+function claimFinisher(state, sessionId, now) {
+  const lock = path.join(home(), `finisher-${String(state.round ?? "now").replace(/[^\w-]/g, "")}.lock`);
+  try {
+    closeSync(openSync(lock, "wx"));
+    writeFileSync(lock, JSON.stringify({ sessionId, at: now }));
+    return true;
+  } catch {
+    return readJson(lock, {}).sessionId === sessionId;
+  }
+}
+
+// The coordinator's role once the handoffs are in. finish: the window still has room up to
+// finishAt, so this session keeps working; wait: it stops like the rest.
+export function roleFor({ state, windows, sessionId, now = Date.now() }) {
+  const threshold = state.threshold ?? DEFAULT_THRESHOLD;
+  const finishAt = state.finishAt ?? DEFAULT_FINISH_AT;
+  if (state.phase !== "handoff") return { role: "wait", why: "nothing is waiting for a reset" };
+  if (finishAt <= threshold) return { role: "wait", why: `finishing is off (finish-at ${finishAt} is not above the threshold ${threshold})` };
+  if (state.finisher?.round === state.round && state.finisher.sessionId !== sessionId) return { role: "wait", why: "another session is finishing" };
+  if (!windows?.length) return { role: "wait", why: "the usage reading failed, so there's no telling how much is left" };
+  const pct = hotWindows(windows, threshold, now).hot[0]?.pct ?? windows[0].pct;
+  if (pct >= finishAt) return { role: "wait", why: `usage is already at ${pct}%` };
+  return { role: "finish", finishAt, pct };
+}
+
+async function awaitHandoffs(sessionId, { timeoutS = awaitS(), pollMs = 3000 } = {}) {
+  const end = Date.now() + timeoutS * 1000;
+  let waiting = [];
+  for (;;) {
+    const state = readState();
+    const handoffs = listHandoffs();
+    const mine = handoffs.find((h) => h.sessionid === sessionId && isPending(h));
+    if (mine && !mine.filled) return { error: `write your handoff first: ${mine.file}`, code: 4 };
+    waiting = waitingOn({ state, handoffs, open: openSessions(), self: sessionId });
+    if (!waiting.length || Date.now() >= end) break;
+    await sleep(pollMs);
+  }
+  const now = Date.now();
+  let state = readState();
+  const { windows } = await cachedWindows(now, state.threshold ?? DEFAULT_THRESHOLD);
+  let r = roleFor({ state, windows, sessionId, now });
+  if (r.role === "finish" && !claimFinisher(state, sessionId, now)) r = { role: "wait", why: "another session is finishing" };
+  if (r.role === "finish") {
+    state = { ...readState(), finisher: { sessionId, round: state.round, finishAt: r.finishAt, since: iso(now) } };
+    writeState(state);
+  }
+  const written = listHandoffs().filter((h) => isPending(h) && h.filled && h.mtime >= (Date.parse(state.round) || 0) - 60_000).length;
+  const job = state.phase === "handoff" && state.resumeAt ? jobSpec({ resumeAt: state.resumeAt, sessionId, round: state.round, now }) : null;
+  return {
+    ...r, written,
+    waitingOn: waiting.map((h) => h.session && !h.session.startsWith("(fill in") ? h.session : h.name),
+    ...(waiting.length ? { timedOut: true } : {}),
+    resumeAt: state.resumeAt ?? null, resumeAtLocal: state.resumeAt ? localTime(state.resumeAt, now) : null,
+    job,
+    ...(state.job?.id && state.job.sessionId !== sessionId ? { otherJob: state.job } : {}),
+  };
 }
 
 // ---- status line ----
@@ -1093,6 +1426,13 @@ async function rehearse() {
   return passed ? 0 : 1;
 }
 
+// Pending handoffs. open: the session is still running (message it); canReopen: claude --resume
+// can bring it back.
+function pendingList() {
+  const open = openSessions();
+  return listHandoffs().filter(isPending).map((h) => ({ ...h, open: h.sessionid ? open.has(h.sessionid) : null, canReopen: hasTranscript(h.sessionid) }));
+}
+
 function flag(args, name, fallback) {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
@@ -1115,7 +1455,8 @@ async function main(argv) {
   switch (cmd) {
     case "check": {
       const threshold = Number(flag(args, "--threshold", state.threshold ?? DEFAULT_THRESHOLD));
-      if (state.threshold !== threshold) writeState({ ...state, threshold });
+      const finishAt = Number(flag(args, "--finish-at", state.finishAt ?? DEFAULT_FINISH_AT));
+      if (state.threshold !== threshold || (state.finishAt ?? DEFAULT_FINISH_AT) !== finishAt) writeState({ ...state, threshold, finishAt });
       const { windows, error, account } = await cachedWindows(Date.now(), threshold, readWindows, true);
       const d = decide({ windows, state, threshold });
       const handoffs = listHandoffs();
@@ -1130,13 +1471,21 @@ async function main(argv) {
         pending: handoffs.filter(isPending).length,
         stalePending: stalePending(state, handoffs),
         waker: state.waker ? { ...state.waker, alive: alive(state.waker.pid) } : null,
+        finishAt,
+        ...(state.coordinator ? { coordinator: state.coordinator.sessionId } : {}),
+        ...(state.finisher?.round && state.finisher.round === state.round ? { finisher: state.finisher.sessionId } : {}),
+        ...(state.job ? { job: { ...state.job, runsAtLocal: localTime(state.job.runsAt) } } : {}),
       });
     }
     case "mark-handoff": {
+      // A new limit starts a round, as the hook does: nothing of the last one carries over.
+      const now = Date.now();
+      const base = freshRound(state, now) ? { ...KEEP(state), round: roundId(now), ...accountField(currentAccount()) } : state;
       const next = {
-        ...state,
+        ...base,
+        round: base.round ?? roundId(now),
         phase: "handoff",
-        resumeAt: flag(args, "--resume-at", state.resumeAt),
+        resumeAt: flag(args, "--resume-at", base.resumeAt),
         watcher: flag(args, "--session", state.watcher),
         cwd: fwd(path.resolve(flag(args, "--cwd", process.cwd()))),
         requestedAt: iso(Date.now()),
@@ -1152,14 +1501,54 @@ async function main(argv) {
       out(r);
       return r.claimed ? 0 : 3;
     }
-    case "pending": {
-      // open: the session is still running (message it); canReopen: claude --resume can bring it back.
-      const open = openSessions();
-      return out(listHandoffs().filter(isPending).map((h) => ({
-        ...h,
-        open: h.sessionid ? open.has(h.sessionid) : null,
-        canReopen: hasTranscript(h.sessionid),
-      })));
+    case "pending":
+      return out(pendingList());
+    case "await-handoffs": {
+      const sessionId = flag(args, "--session-id", null);
+      if (!sessionId) throw new Error("await-handoffs --session-id ID");
+      const r = await awaitHandoffs(sessionId);
+      out(r);
+      return r.code ?? 0;
+    }
+    case "job": {
+      if (args.includes("--clear")) {
+        writeState({ ...state, job: null });
+        return out("restart job: none");
+      }
+      const id = flag(args, "--id", null);
+      const sessionId = flag(args, "--session-id", null);
+      if (!id || !sessionId) throw new Error("job --id JOB --session-id ID");
+      if (state.phase !== "handoff") throw new Error("no limit is waiting for a reset, so there's nothing to schedule");
+      // --runs-at: the time actually scheduled (continue's early answer picks a later one).
+      const given = Date.parse(flag(args, "--runs-at", ""));
+      const runsAt = Number.isFinite(given) ? iso(given) : jobSpec({ resumeAt: state.resumeAt, sessionId, round: state.round }).runsAt;
+      const job = { id, sessionId, resumeAt: state.resumeAt, round: state.round ?? null, runsAt, account: state.account?.key ?? null, email: state.account?.email ?? null, at: iso(Date.now()) };
+      writeState({ ...state, job });
+      return out({ job, runsAtLocal: localTime(runsAt), ...(state.job?.sessionId && state.job.sessionId !== sessionId ? { replaced: state.job } : {}) });
+    }
+    case "continue": {
+      const sessionId = flag(args, "--session-id", null);
+      const threshold = state.threshold ?? DEFAULT_THRESHOLD;
+      const { windows } = await cachedWindows(Date.now(), threshold, readWindows, true);
+      const decision = decide({ windows, state, threshold });
+      const account = currentAccount();
+      const p = continuePlan({ state, account, decision, sessionId, round: flag(args, "--round", null), now: args.includes("--now") });
+      if (p.action === "expired") {
+        // Only the login change ends the round. A stale job leaves the current round's job alone.
+        if (state.phase === "handoff" && loginChanged(state, account)) expireRound(state, account);
+        return out(p);
+      }
+      if (p.action === "nothing") return out(p);
+      if (p.action === "early") {
+        // Not reset yet (or the reading lags): run again then. Never schedule a time that has passed.
+        const when = Math.max(Date.parse(p.resumeAt) || Date.now(), Date.now() + (decision.nextCheckSeconds - JOB_DELAY_S) * 1000);
+        if (p.resumeAt && p.resumeAt !== state.resumeAt) writeState({ ...state, resumeAt: p.resumeAt });
+        return out({ ...p, resumeAtLocal: localTime(p.resumeAt), job: jobSpec({ resumeAt: when, sessionId, round: state.round }) });
+      }
+      const claim = claimResume(flag(args, "--by", "unknown"), state);
+      if (!claim.claimed) return out({ action: "claimed", by: claim.by, why: `${claim.by} is already restarting the sessions` });
+      writeState({ ...readState(), phase: "resuming", resumingSince: iso(Date.now()), job: null });
+      return out({ action: "continue", pending: pendingList(), handoffDir: fwd(handoffDir()) });
     }
     case "hook": {
       if (args[0] === "on" || args[0] === "off") setHook(args[0]);
@@ -1176,7 +1565,11 @@ async function main(argv) {
       markResumed(args[0], flag(args, "--by", "unknown"));
       return out(`resumed: ${fwd(args[0])}`);
     case "finish-resume":
-      writeState({ phase: "watching", threshold: state.threshold, lastResumeAt: iso(Date.now()), messaged: state.messaged ?? {} });
+      // A new limit started while the sessions were restarting: that round is still waiting.
+      if (state.phase === "handoff" && Date.parse(state.resumeAt) > Date.now()) {
+        return out(`still waiting: a new limit started, resets ${localTime(state.resumeAt)}`);
+      }
+      writeState({ phase: "watching", ...KEEP(state), lastResumeAt: iso(Date.now()), messaged: state.messaged ?? {} });
       clearLocks({ phase: "watching" });
       return out("watching");
     case "launch": {
@@ -1195,7 +1588,7 @@ async function main(argv) {
     case "status":
       return out({ ...state, ...(state.resumeAt ? { resumeAtLocal: localTime(state.resumeAt) } : {}), waker: state.waker ? { ...state.waker, alive: alive(state.waker.pid) } : null, handoffDir: fwd(handoffDir()) });
     case "reset":
-      writeState({ phase: "watching", threshold: state.threshold });
+      writeState({ phase: "watching", ...KEEP(state) });
       clearLocks({ phase: "watching" });
       return out("reset: watching");
     case "statusline": {

@@ -8,6 +8,31 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Added
 
+- **usage-handoff restarts everyone at the reset, and one session uses up the rest of the window.**
+  - **The coordinator:** the first session the hook tells about the limit.
+    - Once its own handoff is written, it runs `await-handoffs`. That waits, without using usage,
+      until every other open session's handoff is written (at most 9 minutes).
+    - It schedules a **restart job**: a one-time CronCreate task a minute after the reset (never on
+      :00 or :30). The job runs `/usage-handoff continue`.
+  - **The finisher:** the coordinator then keeps working on its own Next steps to 99%
+    (`--finish-at N`), so the last few percent aren't wasted. The hook stays quiet for it and its
+    subagents until then, then tells it once to stop. Only one session finishes per limit.
+  - **At the reset:** the job tells **every** running agent to carry on. Sessions with a handoff
+    resume from it; the rest are told to carry on if the limit stopped them. Closed sessions
+    reopen. The job and the background waker share one claim, so only one restarts everyone. The
+    waker waits 10 more minutes while the job's session is open.
+  - **When the reset moves:** if another window fills, the hook records the later reset and tells
+    the job's session to move its job. A job that runs early is given a new time.
+  - **Locked to the login:** the restart belongs to the account that hit the limit. Logging in to
+    another account cancels it, so the job does nothing and the waker exits.
+    - The next main session the hook sees hears how many handoffs are pending and that
+      `/usage-handoff resume` restarts them. So does the session holding the job, which deletes it.
+    - If the new account reaches its limit too, sessions are told again and a new round starts.
+    - A token renewal for the same account changes nothing.
+  - **Safe finishing:** if the usage reading fails while finishing, the finisher stops. A restart
+    that stalls halfway doesn't block the next limit.
+  - `/usage-handoff continue` by hand restarts everyone now.
+  - Usage is re-read every 30 seconds above the threshold, so the finisher stops close to its line.
 - **`/screenreader <url> <task>` tests a page the way a vision-impaired NVDA user would.**
   - **Setup:** the first run picks the screen reader and sets up the rest one step at a time,
     asking before each install and before allowing key presses.
