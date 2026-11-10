@@ -57,7 +57,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, appendFileSync, openSync, closeSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync, appendFileSync, openSync, closeSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -515,7 +515,8 @@ export function jobSpec({ resumeAt, sessionId, round, now = Date.now() }) {
 
 // What the restart job does when it runs. decision: decide() on a fresh reading.
 // now: run by hand, so restart even before the reset (like resume).
-export function continuePlan({ state = {}, account, decision, sessionId = null, round = null, now = false, at = Date.now() }) {
+// claimBy: who holds the resume claim. A claim the waker holds can be taken over (claimResume).
+export function continuePlan({ state = {}, account, decision, sessionId = null, round = null, now = false, at = Date.now(), claimBy = null }) {
   if (now) return { action: "continue" };
   // The hook or the waker already cancelled this round when the login changed.
   if (round && state.expired?.round === round) {
@@ -527,8 +528,9 @@ export function continuePlan({ state = {}, account, decision, sessionId = null, 
   if (round && state.round && round !== state.round) return { action: "expired", why: "it was made for an earlier limit" };
   if (state.job?.sessionId && sessionId && state.job.sessionId !== sessionId) return { action: "expired", why: "a newer restart job in another session replaced it" };
   if ((state.phase ?? "watching") === "watching") return { action: "nothing", why: "nothing is waiting for a reset" };
-  // The waker's hidden session (or another) is restarting everyone right now.
-  if (state.phase === "resuming" && at - (Date.parse(state.resumingSince) || 0) < STALE_CLAIM_MS) {
+  // A session (the waker's hidden one, or another) is restarting everyone right now. If only the
+  // waker holds the claim, its session may not have started: this job takes over.
+  if (state.phase === "resuming" && claimBy !== "waker" && at - (Date.parse(state.resumingSince) || 0) < STALE_CLAIM_MS) {
     return { action: "nothing", why: "the sessions are already being restarted" };
   }
   if (state.phase === "handoff" && decision?.action === "wait") return { action: "early", resumeAt: decision.resumeAt };
@@ -552,10 +554,13 @@ export function stalePending(state, handoffs, now = Date.now()) {
 
 // One claim per reset, so the watcher and the background waker never both resume. The waker's
 // claim hands over to the session it starts; any claim older than 30 minutes can be taken.
+const resumeLock = (state) => path.join(home(), `resume-${String(state.resumeAt ?? "now").replace(/[^\w-]/g, "")}.lock`);
+// Who holds this reset's resume claim, or null.
+export const resumeClaimBy = (state = readState()) => readJson(resumeLock(state), {}).by ?? null;
+
 export function claimResume(by, state = readState(), now = Date.now()) {
   mkdirSync(home(), { recursive: true });
-  const key = String(state.resumeAt ?? "now").replace(/[^\w-]/g, "");
-  const lock = path.join(home(), `resume-${key}.lock`);
+  const lock = resumeLock(state);
   const body = JSON.stringify({ by, at: now });
   try {
     closeSync(openSync(lock, "wx"));
@@ -729,8 +734,9 @@ const graceS = () => {
 // Resume claims from earlier resets. finish-resume and reset remove them.
 export function staleLocks(state = readState(), dir = home()) {
   let names = [];
-  try { names = readdirSync(dir).filter((n) => /^(resume|finisher)-.*\.lock$/.test(n)); } catch {}
-  const current = [`resume-${String(state.resumeAt ?? "now").replace(/[^\w-]/g, "")}.lock`, `finisher-${String(state.round ?? "now").replace(/[^\w-]/g, "")}.lock`];
+  try { names = readdirSync(dir).filter((n) => /^(resume|finisher|coordinator)-.*\.lock$/.test(n)); } catch {}
+  const at = String(state.resumeAt ?? "now").replace(/[^\w-]/g, "");
+  const current = [`resume-${at}.lock`, `coordinator-${at}.lock`, `finisher-${String(state.round ?? "now").replace(/[^\w-]/g, "")}.lock`];
   return names.filter((n) => state.phase === "watching" || !current.includes(n)).map((n) => path.join(dir, n));
 }
 const clearLocks = (state) => { for (const f of staleLocks(state)) rmSync(f, { force: true }); };
@@ -756,11 +762,16 @@ export function expireRound(state, account, now = Date.now()) {
 function KEEP(state) { return { threshold: state.threshold, finishAt: state.finishAt }; }
 
 // A limit starts a new round unless one is waiting for a reset that is still ahead. A phase stuck
-// at "resuming" (the resume session stopped early) doesn't hold the next limit back.
-export function freshRound(state = {}, now = Date.now()) {
-  if (state.phase !== "handoff") return true;
+// at "resuming" (the resume session stopped early) doesn't hold the next limit back, but a resume
+// started by hand before the reset does: the same limit (resumeAt, its reset) is still on.
+export function freshRound(state = {}, now = Date.now(), resumeAt = null) {
   const cur = Date.parse(state.resumeAt);
-  return Number.isFinite(cur) && cur <= now;
+  if (state.phase === "handoff") return Number.isFinite(cur) && cur <= now;
+  if (state.phase === "resuming") {
+    if (!Number.isFinite(cur) || cur <= now) return true;
+    return resumeAt == null || Math.abs(resumeAt - cur) > 60_000;
+  }
+  return true;
 }
 
 const accountField = (account) => (account?.key ? { account: { key: account.key, email: account.email ?? null } } : {});
@@ -885,14 +896,18 @@ export function hookPlan({ input, windows, threshold = DEFAULT_THRESHOLD, notifi
   const key = `${input.session_id}:${input.agent_id || (finishing ? "finish" : "main")}`;
   if (notified[key] && Date.parse(notified[key]) > now) return null;
   const extra = finishing && !input.agent_id ? { finish: true } : {};
+  // The round's reset: the finisher's job runs then, even when a sooner window is the one at 99%.
+  const roundReset = finishing ? Date.parse(finisher.resumeAt) : NaN;
   // The finisher works above the threshold, so it must see the usage: no reading means stop.
+  // (Once the reset has passed there's room again, so a failed reading is no reason to stop.)
   if (finishing && !windows) {
-    const resumeAt = Date.parse(finisher.resumeAt) || now + MAX_WAKE_S * 1000;
-    return { key, resumeAt, pct: null, window: null, subagent: Boolean(input.agent_id), noReading: true, ...extra };
+    if (!(roundReset > now)) return null;
+    return { key, resumeAt: roundReset, pct: null, window: null, subagent: Boolean(input.agent_id), noReading: true, ...extra };
   }
   const { hot, resumeAt } = hotWindows(windows, finishing ? finisher.finishAt : threshold, now);
   if (!hot.length) return null;
-  return { key, resumeAt, pct: hot[0].pct, window: hot[0].name, subagent: Boolean(input.agent_id), ...extra };
+  const reset = Number.isFinite(roundReset) ? Math.max(resumeAt, roundReset) : resumeAt;
+  return { key, resumeAt: reset, pct: hot[0].pct, window: hot[0].name, subagent: Boolean(input.agent_id), ...extra };
 }
 
 // role: { coordinator, sessionId, finishAt, script } for the session that coordinates this limit.
@@ -964,9 +979,11 @@ function ensureSkeleton(input, resumeAt, now) {
 // A new limit starts a round: its time, the account that hit it, and (from the first main session
 // the hook tells) its coordinator. A later reset (another window filled) moves the wait.
 export function armedState(st, { resumeAt, cwd, now, sessionId = null, account = null }) {
+  // A reset that has passed is no limit to wait for.
+  if (!(resumeAt > now)) return st;
   const cur = Date.parse(st.resumeAt);
   let next = st;
-  if (freshRound(st, now)) {
+  if (freshRound(st, now, resumeAt)) {
     next = {
       ...KEEP(st), phase: "handoff", resumeAt: iso(resumeAt), cwd: fwd(cwd || process.cwd()),
       requestedAt: iso(now), round: roundId(now), ...accountField(account), messaged: {},
@@ -982,8 +999,14 @@ export function armedState(st, { resumeAt, cwd, now, sessionId = null, account =
 // make sure a waker is still running. Returns the state.
 function ensureArmed(resumeAt, cwd, now, sessionId = null, account = null) {
   const st = readState();
-  const fresh = freshRound(st, now);
-  const armed = armedState(st, { resumeAt, cwd, now, sessionId, account: fresh ? account ?? currentAccount() : null });
+  const fresh = freshRound(st, now, resumeAt);
+  let armed = armedState(st, { resumeAt, cwd, now, sessionId, account: fresh ? account ?? currentAccount() : null });
+  // Hooks crossing the threshold at the same moment each start the round in their own copy of the
+  // state. The lock picks one coordinator, and every copy names it, whichever is written last.
+  if (sessionId && armed.phase === "handoff" && armed.coordinator?.sessionId === sessionId) {
+    const holder = claimCoordinator(armed, sessionId, now);
+    if (holder !== sessionId) armed = { ...armed, coordinator: holder ? { sessionId: holder, at: armed.coordinator.at } : null };
+  }
   const waker = armWaker(armed);
   if (armed === st && waker === st.waker) return st; // nothing changed: don't rewrite the file
   const next = { ...armed, waker };
@@ -1058,9 +1081,8 @@ export async function runHook(raw, now = Date.now()) {
   writeFileSync(notifiedFile(), JSON.stringify(notified, null, 2));
   const armed = ensureArmed(plan.resumeAt, input.cwd, now, plan.subagent || plan.finish ? null : input.session_id, account);
   const finishAt = armed.finishAt ?? DEFAULT_FINISH_AT;
-  const role = !plan.subagent && !plan.finish && armed.coordinator?.sessionId === input.session_id
-    ? { coordinator: true, sessionId: input.session_id, finishAt: finishAt > threshold ? finishAt : null }
-    : {};
+  const coordinates = !plan.subagent && !plan.finish && armed.phase === "handoff" && armed.coordinator?.sessionId === input.session_id;
+  const role = coordinates ? { coordinator: true, sessionId: input.session_id, finishAt: finishAt > threshold ? finishAt : null } : {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext: hookMessage(plan, file, role) } };
 }
 
@@ -1070,6 +1092,26 @@ const awaitS = () => {
   const v = Number(process.env.USAGE_HANDOFF_AWAIT_S);
   return Number.isFinite(v) && v >= 0 && process.env.USAGE_HANDOFF_AWAIT_S !== "" ? v : AWAIT_S;
 };
+
+// One coordinator per limit: the session holding the lock for this reset. Returns its session id.
+function claimCoordinator(state, sessionId, now) {
+  mkdirSync(home(), { recursive: true });
+  const lock = path.join(home(), `coordinator-${String(state.resumeAt ?? "now").replace(/[^\w-]/g, "")}.lock`);
+  try {
+    const fd = openSync(lock, "wx");
+    try { writeSync(fd, JSON.stringify({ sessionId, at: now })); } finally { closeSync(fd); }
+    return sessionId;
+  } catch {
+    // The winner writes its id right after creating the file: give it a moment.
+    const pause = new Int32Array(new SharedArrayBuffer(4));
+    for (let i = 0; i < 20; i++) {
+      const holder = readJson(lock, {}).sessionId;
+      if (holder) return holder;
+      Atomics.wait(pause, 0, 0, 5);
+    }
+    return null;
+  }
+}
 
 // One finisher per limit, even if two sessions ask at once.
 function claimFinisher(state, sessionId, now) {
@@ -1480,7 +1522,7 @@ async function main(argv) {
     case "mark-handoff": {
       // A new limit starts a round, as the hook does: nothing of the last one carries over.
       const now = Date.now();
-      const base = freshRound(state, now) ? { ...KEEP(state), round: roundId(now), ...accountField(currentAccount()) } : state;
+      const base = freshRound(state, now, Date.parse(flag(args, "--resume-at", "")) || null) ? { ...KEEP(state), round: roundId(now), ...accountField(currentAccount()) } : state;
       const next = {
         ...base,
         round: base.round ?? roundId(now),
@@ -1532,10 +1574,13 @@ async function main(argv) {
       const { windows } = await cachedWindows(Date.now(), threshold, readWindows, true);
       const decision = decide({ windows, state, threshold });
       const account = currentAccount();
-      const p = continuePlan({ state, account, decision, sessionId, round: flag(args, "--round", null), now: args.includes("--now") });
+      const p = continuePlan({ state, account, decision, sessionId, round: flag(args, "--round", null), now: args.includes("--now"), claimBy: resumeClaimBy(state) });
       if (p.action === "expired") {
         // Only the login change ends the round. A stale job leaves the current round's job alone.
-        if (state.phase === "handoff" && loginChanged(state, account)) expireRound(state, account);
+        // This job has just fired, so nobody needs telling to delete it.
+        if (state.phase === "handoff" && loginChanged(state, account)) {
+          expireRound({ ...state, job: state.job?.sessionId === sessionId ? null : state.job }, account);
+        }
         return out(p);
       }
       if (p.action === "nothing") return out(p);

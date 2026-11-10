@@ -1,6 +1,6 @@
 // Use case: tests/use-cases/usage-continue.md
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -83,6 +83,7 @@ test("the restart job expires on another login or an older limit, waits when ear
   assert.equal(m.continuePlan({ state: { ...state, phase: "resuming" }, account: LEE, decision: { action: "wait" }, sessionId: "api", round: "r1" }).action, "continue", "a resume that stalled");
   const busy = { ...state, phase: "resuming", resumingSince: at(T0 - 5 * MIN) };
   assert.equal(m.continuePlan({ state: busy, account: LEE, decision: due, sessionId: "api", round: "r1", at: T0 }).action, "nothing", "a restart under way");
+  assert.equal(m.continuePlan({ state: busy, account: LEE, decision: due, sessionId: "api", round: "r1", at: T0, claimBy: "waker" }).action, "continue", "the waker's claim can be taken over");
   assert.equal(m.continuePlan({ state: busy, account: WORK, decision: due, sessionId: "api", round: "r1", at: T0 }).action, "nothing", "a login change after the reset cancels nothing");
   const gone = { phase: "watching", expired: { round: "r1", from: "lee@example.com", to: "lee@acme.dev" } };
   assert.match(m.continuePlan({ state: gone, account: WORK, decision: due, sessionId: "api", round: "r1" }).why, /login changed from lee@example.com/, "cancelled earlier by the hook or the waker");
@@ -123,6 +124,13 @@ test("the finisher and its subagents keep working past the threshold and hear on
   assert.equal(blind.resumeAt, Date.parse(at(T0 + 30 * MIN)));
   assert.match(m.hookMessage(blind, "/h/api.md"), /usage reading failed.*Stop now/s);
   assert.equal(m.hookPlan({ input: { session_id: "web" }, windows: null, now: T0, finisher }), null, "everyone else is already stopped");
+  const passed = { ...finisher, resumeAt: at(T0 - MIN) };
+  assert.equal(m.hookPlan({ input: { session_id: "api" }, windows: null, now: T0, finisher: passed }), null, "after the reset there's room again");
+
+  // The weekly window moved the round's reset: the 5-hour window at 99% doesn't change the time the note gives.
+  const week = T0 + 3 * 24 * 60 * MIN;
+  const late = m.hookPlan({ input: { session_id: "api" }, windows: w99, notified: {}, now: T0, finisher: { ...finisher, resumeAt: at(week) } });
+  assert.equal(late.resumeAt, Date.parse(at(week)));
 });
 
 test("the coordinator's note adds the wait, the job and the finish; everyone else's ends the turn", () => {
@@ -168,6 +176,14 @@ test("a new limit starts a fresh round even if the last restart stalled, or its 
   assert.deepEqual(next.account, LEE);
   assert.equal(next.job, undefined);
   assert.equal(next.finisher, undefined);
+
+  // Resumed by hand before the reset, with the window still full: the same limit, not a new one.
+  const byHand = { phase: "resuming", round: "r1", resumeAt: at(T0 + 30 * MIN), resumingSince: at(T0 - MIN) };
+  assert.equal(m.freshRound(byHand, T0, T0 + 30 * MIN + 943), false);
+  assert.equal(m.armedState(byHand, { resumeAt: T0 + 30 * MIN + 943, cwd: "/w", now: T0 }).phase, "resuming");
+  assert.equal(m.freshRound(byHand, T0, T0 + 3 * 24 * 60 * MIN), true, "a different reset is a new limit");
+  const waiting = { phase: "handoff", round: "r1", resumeAt: at(T0 + 30 * MIN) };
+  assert.equal(m.armedState(waiting, { resumeAt: T0 - MIN, cwd: "/w", now: T0 }), waiting, "a reset that has passed starts nothing");
 });
 
 test("the reset moves only for a known reset more than a minute later", () => {
@@ -334,6 +350,10 @@ test("end to end: another login cancels the restart, for the hook, the job and t
     const exp = json(["continue", "--session-id", "dddd4444-web", "--round", r2, "--by", "web"], WORK);
     assert.equal(exp.action, "expired");
     assert.equal(state().phase, "watching");
+    // The job that just fired isn't one to delete.
+    const told = hook({ session_id: "dddd4444-web" }, WORK);
+    assert.match(told, /login changed/);
+    assert.doesNotMatch(told, /CronDelete/);
   } finally {
     killWaker();
     cli(["reset"]);
@@ -426,6 +446,32 @@ test("end to end: hook calls don't rewrite the state when nothing moved, and mar
     // A resume that finishes after a new limit started leaves that limit waiting.
     assert.match(cli(["finish-resume"]).stdout, /still waiting/);
     assert.equal(state().phase, "handoff");
+  } finally {
+    killWaker();
+    cli(["reset"]);
+  }
+});
+
+test("end to end: sessions crossing the threshold at the same moment get one coordinator", async () => {
+  const ids = ["hhhh0001-a", "hhhh0002-b", "hhhh0003-c", "hhhh0004-d"];
+  for (const id of ids) openSession(id);
+  cli(["reset"]);
+  rmSync(path.join(HOME, "notified.json"), { force: true });
+  rmSync(path.join(HOME, "usage-cache.json"), { force: true });
+  usage(96, Date.now() + 40 * MIN);
+  const run = (id) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [SCRIPT, "--hook"], { env: env() });
+    let out = "";
+    c.stdout.on("data", (d) => { out += d; });
+    c.on("close", () => resolve(out ? JSON.parse(out).hookSpecificOutput.additionalContext : ""));
+    c.stdin.end(JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Bash", cwd: HOME, session_id: id }));
+  });
+  try {
+    const notes = await Promise.all(ids.map(run));
+    assert.equal(notes.filter((n) => /Wrap up/.test(n)).length, 4, "everyone is told");
+    const coords = ids.filter((id, i) => /You coordinate this limit/.test(notes[i]));
+    assert.equal(coords.length, 1, `one coordinator (${coords.join(", ")})`);
+    assert.equal(state().coordinator.sessionId, coords[0], "the state names the same one");
   } finally {
     killWaker();
     cli(["reset"]);

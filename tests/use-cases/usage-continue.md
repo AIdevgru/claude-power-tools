@@ -6,7 +6,7 @@ Lee runs three Claude Code sessions on one Max plan: `api` (on `feat/billing`), 
 ## The limit
 
 1. At 96% of the 5-hour window, the hook adds its note to `api` first, so `api` coordinates this
-   limit.
+   limit. If several sessions cross the threshold at the same moment, a lock file picks one of them.
    - The note has the usual steps: stop starting work, gather subagents, WIP-commit and fill in the
      handoff.
    - It has three more for the coordinator:
@@ -70,7 +70,10 @@ Lee runs three Claude Code sessions on one Max plan: `api` (on `feat/billing`), 
     to the work account. The old job, if it still runs, leaves the new round's job alone.
   - A token renewal for the same account changes nothing.
 - **The usage reading fails while `api` is finishing:** above the threshold it can't see how much is
-  left, so the hook tells it to stop.
+  left, so the hook tells it to stop. Once the reset has passed there's room again, so a failed
+  reading changes nothing then.
+- **Resumed by hand before the reset:** with the window still full, it's the same limit. The hook
+  doesn't start a second round for it.
 - **A restart stalls:** if the restart stops halfway, the next limit still starts a new round with
   its own coordinator, finisher and job. A restart that finishes after a new limit started leaves
   that limit waiting.

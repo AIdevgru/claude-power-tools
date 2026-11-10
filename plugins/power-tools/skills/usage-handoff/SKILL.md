@@ -114,7 +114,7 @@ From usage-handoff (<this session>): Claude usage has reset. If you stopped beca
    Then `USAGE mark-messaged <file> ...` for the handoff files. If one is still pending 15 minutes later, `check` lists it in `stalePending` and the next tick launches it (step 4).
 4. For each pending handoff whose session is closed (`open` is false or null and no `ListAgents` match), or that is in `stalePending`: `USAGE launch <file>`. It opens one new terminal in the handoff's `Cwd`, which closes by itself when that `claude` exits. This is the only case that opens a window: open sessions resume in their own window from the message. When `canReopen` is true it runs `claude --resume <session id>`, so the conversation comes back with its full history; otherwise a fresh `claude`. Either way the request is to resume from the file, and the session marks the file itself. `launch` refuses a session that is still open. Never pass `--force` on your own: two copies of one conversation fight over it. Put an open session that ignored the message on the report for the owner instead. If it prints "no terminal found", put the printed command on the report for the owner.
 5. This session's own handoff: `USAGE mark-resumed <file> --by <this session>`, then carry on with its Next steps after the report.
-6. `USAGE finish-resume`. The loop goes back to watching.
+6. `USAGE finish-resume`. The loop goes back to watching. If it prints "still waiting", a new limit started while the sessions were restarting: that limit is still waiting for its reset, so leave it.
 
 ## Continue (the restart job)
 
@@ -127,7 +127,7 @@ The coordinator's one-time job runs this at the reset, in that session. Its prom
    - **`claimed`**: another session (or the waker's session) is already restarting the sessions. Resume this session's own handoff only (step 3) and skip `finish-resume`.
    - **`continue`**: this session restarts everyone. `pending` is the same list `USAGE pending` gives.
 2. Do Resume steps 3 and 4 with that list and a fresh `ListAgents`.
-3. This session's own handoff: `USAGE mark-resumed <file> --by <this session>`, then `USAGE finish-resume`, then report and carry on with its Next steps.
+3. This session's own handoff: `USAGE mark-resumed <file> --by <this session>`, then `USAGE finish-resume` ("still waiting" means a new limit started meanwhile; leave it), then report and carry on with its Next steps.
 
 Run by hand as `/usage-handoff continue` (no flags), it restarts everyone now. Use `USAGE continue --now --by <this session>` in step 1, then follow the steps above.
 
