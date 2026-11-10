@@ -8,6 +8,27 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Added
 
+- **`/video <request>` makes the video you describe and hands back an MP4.**
+  - **Plan:** `video.mjs plan` settles the length (20 s by default, at most 10 minutes), the size
+    (`1080p`, `720p`, `4k`, `vertical`, `square`, `portrait` or `WxH` with even sides) and the fps.
+    The skill says what it picked and asks only when something essential is missing.
+  - **Storyboard:** Claude writes `storyboard.md`. Its frame counts must add up to the planned total.
+  - **Build:** Claude builds the video in a Remotion project copied from the bundled template.
+    - The template has one 2D scene, one `@remotion/three` scene, a fade between them and Inter
+      from Google Fonts.
+    - Every package is pinned to an exact version; `video.mjs add` keeps added `@remotion/*`
+      packages on the same version.
+  - **Check and render:** the skill renders stills at key frames and looks at them, fixing problems
+    for up to three rounds. Then it renders the MP4 and reports the path, duration, size, fps and
+    file size.
+  - **Output:** videos go to `videos/<date>-<slug>/` in a git repo, otherwise to `~/.claude/video/`.
+  - **Rules:**
+    - Audio comes only from files you give it, with captions when there's no voice.
+    - It never uses characters, logos or music you didn't supply.
+    - SKILL.md states Remotion's license: free for individuals, companies with up to 3 employees
+      and non-profits; other companies need a Company License.
+  - **Windows:** `npm` is run through node's own `npm-cli.js` where it can be found, because cmd can
+    miss programs that are on PATH.
 - **usage-handoff keeps track of every account you log in with.** Each usage reading is filed
   under the account it was taken with (from Claude Code's `.claude.json`, never the token), in
   `~/.claude/usage-handoff/accounts.json`. After `/login` to another account, the others keep
