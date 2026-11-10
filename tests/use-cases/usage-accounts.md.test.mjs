@@ -100,7 +100,7 @@ test("each reading is filed under its account, once; switching logins keeps the 
     { name: "seven_day", pct: 49, resetsAt: iso(T0 + 3 * 24 * H) },
   ]);
   assert.ok(existsSync(path.join(home, "accounts.html")), "the page is written with the record");
-  const cached = await m.cachedWindows(T0 + 30_000, 95, reading(windows(1, 1)), false, "tok-a", identify);
+  const cached = await m.cachedWindows(T0 + 20_000, 95, reading(windows(1, 1)), false, "tok-a", identify);
   assert.equal(cached.cached, true);
   assert.equal(cached.account.email, "lee@example.com");
   assert.equal(looks, 1, "a cached reading is filed once, not on every call");

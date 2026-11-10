@@ -165,7 +165,7 @@ test("end to end: 97% asks for handoffs, the waker wakes after the reset and sta
 // ---- the hook ----
 
 test("the hook re-reads usage every 10 minutes when low and every minute near the threshold, shared by all sessions", async () => {
-  assert.deepEqual([50, 75, 85, 99, null].map((p) => cacheTtlMs(p) / MIN), [10, 5, 1, 1, 10]);
+  assert.deepEqual([50, 75, 85, 94, 99, null].map((p) => cacheTtlMs(p) / MIN), [10, 5, 1, 1, 0.5, 10]);
   rmSync(path.join(HOME, "usage-cache.json"), { force: true });
   let reads = 0;
   const read = async () => ((reads += 1), { windows: parseWindows(usage(80)) }); // 80%: a 5-minute cache

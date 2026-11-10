@@ -7,7 +7,7 @@ subscription with a 5-hour usage window.
 
 1. Lee installs power-tools and does nothing else. After every prompt and tool call, each
    session's hook reads usage from a cache that every session shares, so the endpoint is asked at
-   most once a minute near the limit and once every 10 minutes when usage is low.
+   most once a minute near the limit (every 30 seconds above it) and once every 10 minutes when usage is low.
 2. The 5-hour window reaches 96%. On its next tool call, each session gets one note: wrap up,
    ask your subagents where they are, WIP-commit, and fill in the handoff file the hook just
    created. The file already has `Status: pending`, the session id, the folder and the branch.

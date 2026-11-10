@@ -183,7 +183,7 @@ Skills marked † start only when you type them; Claude won't pick them on its o
 | **fleet-status** | Reads each session's status line (asking only those whose line is stale), shows a card per session plus unclaimed tracker tickets, and lets you message the sessions you pick. | — |
 | **pr-dashboard** | Shows open PRs in merge order with CI, queue ETAs, owners and a "Needs you" list. A script gathers every fact. | Python 3.10+ |
 | **request-inbox** | Handles requests you drop in `.claude-inbox/`: claims each one, acts on it, and answers in the file. | — |
-| **usage-handoff** | A hook, on by default, that watches your Claude usage limits. Near the top it has every session and its subagents write a handoff, then restarts the work after the reset: it messages open sessions and reopens closed ones with `claude --resume`. `/usage-handoff off` turns it off; `/loop /usage-handoff` adds a watcher session. It also keeps each account you log in with, so `/usage-handoff accounts` (or a click on its status line) shows every account's usage and resets. | A Claude subscription login |
+| **usage-handoff** | A hook, on by default, that watches your Claude usage limits. Near the top it has every session and its subagents write a handoff, and one session uses up the rest of the window. A restart job at the reset tells every running agent to carry on and reopens closed sessions with `claude --resume`. Logging in to another account cancels the restart. `/usage-handoff off` turns it off; `/loop /usage-handoff` adds a watcher session. It also keeps each account you log in with, so `/usage-handoff accounts` (or a click on its status line) shows every account's usage and resets. | A Claude subscription login |
 
 ### Deliver work (power-tools)
 
