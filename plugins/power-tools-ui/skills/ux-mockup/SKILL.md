@@ -39,8 +39,12 @@ Only stop for something the owner must decide that has no defensible default: a 
 - **Repo rules win.** Read the project's agent instructions (`CLAUDE.md`, `AGENTS.md`) and its product and design docs, and follow them: branch or worktree isolation, timestamp and naming conventions, UI elements the project requires on every page, and its supported languages and locales.
 - **Synthetic data only.** Fill the mockup with invented people, records and content. Never use customer data, production databases, uploads or screenshots of unknown provenance.
 - **Run Impeccable, don't imitate it.** Every design step is a real `/impeccable <command> <target>` call (see below). Use `ui-critique-loop` for scoring. Its blinded assessors decide the score; never score it yourself.
-- **Subagents do the work; you orchestrate.** Give one writer per file. Brief each subagent fully: the feature, the mockup path, the brief, the current findings, and the rules above.
-- **The mockup's form.** A single self-contained HTML file (inline CSS/JS, no build step) at `docs/design/<feature-slug>/mockup/index.html`, or the project's equivalent design folder.
+- **Focus on the core flows.** Stage 1 names them: the few tasks most of the feature's users come to do, each from where they start to done. The mockup's depth, the critique and the persona reviews go to those first. Other paths get the states they need, not new features.
+- **Fixers remove or fold before they add.** Tell every subagent that applies findings to prefer removing an element, or folding it into one that already exists, over adding a feature, control, panel or setting. It adds something only when removing or folding can't fix the finding, and the Decisions log says why.
+- **If a score sits steady between rounds, find out why and adjust.** When the critique score, a persona rating or a core flow's findings don't move from one round to the next, don't run the same kind of fix again. First work out why: the fixes treated a symptom, two findings pull against each other, or the flow itself is wrong. Then change the approach (a different Impeccable command, a shorter or reordered flow, or a cut) and log the reason and the change in the Decisions log.
+- **Update the shared kit if needed.** Some projects keep a shared kit that their mockups use: design tokens, styles and components in the design folder, often next to `DESIGN.md`. If the mockup needs a token, component or pattern that other screens would reuse, add or change it in the kit instead of making a one-off copy, and list the change in the plan. A kit inside product code is product code: don't edit it; put the change in the plan's implementation sequence.
+- **Subagents do the work; you orchestrate.** Give one writer per file. Brief each subagent fully: the feature, the mockup path, the brief, the core flows, the current findings, and the rules above.
+- **The mockup's form.** A single self-contained HTML file (inline CSS/JS, no build step) at `docs/design/<feature-slug>/mockup/index.html`, or the project's equivalent design folder. The only files it may link are the project's shared kit, by relative path.
   - It must be **interactive**: real navigation between states, working inputs, open/close, and the empty, loading, error, success and permission-denied states.
   - It covers every user role that sees the feature, taken from the project's own role or permission model.
   - Colour tokens on `:root`, a dark mode, a phone-width layout with no horizontal scroll, and pinned CDN versions only. If the `artifact-design` skill is available, follow its page contract.
@@ -57,11 +61,13 @@ Report one line per stage (`Stage 3/9 done: ...`) and nothing more until the end
 1. **Ground the current feature.**
    - Read the feature's routes, components and copy, and any existing design docs or mockups for it.
    - Capture screenshots of the live feature where browser tools and a local dev server are available. Otherwise describe the screens from code.
-   - List current pain points with `path:line` evidence, plus the roles and contexts the feature serves.
+   - Name the **core flows** (see Ground rules) and the roles that run each one.
+   - List current pain points with `path:line` evidence, core flows first, plus the roles and contexts the feature serves.
+   - Note whether the project has a shared kit for its mockups, and where.
 
 2. **`/impeccable shape <feature>`.** Run shape on the feature. Answer its discovery interview by accepting the recommendations (see above), anchored on the project's product and design docs and on stage 1. Produce the design brief and save it into the plan.
 
-3. **Build mockup v1.** A subagent runs `/impeccable` with the brief and the mockup path as a new-work request (for example `args: "build the interactive mockup at <path> from this brief: ..."`), then you open it in the browser and confirm every state is reachable.
+3. **Build mockup v1.** A subagent runs `/impeccable` with the brief and the mockup path as a new-work request (for example `args: "build the interactive mockup at <path> from this brief: ..."`), then you open it in the browser and confirm every state is reachable and every core flow runs from start to done.
 
 4. **`/impeccable layout <mockup>`.** Fix spacing, rhythm and visual hierarchy across every state and both colour schemes, at phone and desktop widths.
 
@@ -71,25 +77,28 @@ Report one line per stage (`Stage 3/9 done: ...`) and nothing more until the end
 
 7. **Critique until the score is above the threshold.**
    - Invoke `ui-critique-loop` with `--score <N> <mockup URL>`.
-   - Subagents apply the remediations, and the skill re-scores. Repeat until the verified score is above N or the round cap is hit.
+   - Subagents apply the remediations, core flows first, removing or folding before adding. The skill re-scores.
+   - If the score sits steady between rounds, find out why and adjust before the next round (see Ground rules).
+   - Repeat until the verified score is above N or the round cap is hit.
 
 8. **UX and Designer personas iterate.**
    - **Spawn the reviewers.** Spawn two reviewer subagents in parallel each round, one per persona, against the current mockup. If the user or repo has persona files for UX or Design, load them. Otherwise use these briefs:
      - **UX persona (senior UX researcher and interaction designer):** task completion and flow friction, information architecture, wayfinding, the empty/loading/error states, forms and validation, role differences, accessibility, mobile behaviour and UX copy.
      - **Designer persona (senior product and visual designer):** fit with the project's design system and neighbouring screens, visual hierarchy, typography, spacing, colour and contrast, motion and polish.
-   - **What each reviewer returns:** a **rating from 1 to 10**, the single change that would raise it most, and findings with severity, location and a concrete fix. Ask them to use screenshots.
-   - **Apply the fixes.** Implementation subagents apply the verified findings through the Impeccable command that owns each one (`/impeccable layout`, `clarify`, `typeset`, `adapt`, `polish`, ...), with one writer per file. Each persona also sees the other's previous rating and findings, so the two converge rather than pull apart.
-   - **When to stop:** both ratings are at least `--rating` **and** the critique score is still above N. If the round's changes were material, re-run stage 7's critique once to confirm. Otherwise, repeat until the round cap.
+   - **What each reviewer returns:** a **rating from 1 to 10**, the single change that would raise it most, and findings with severity, location and a concrete fix. Ask them to walk each core flow from start to done before anything else, and to use screenshots. A fix that removes or folds something is preferred over one that adds.
+   - **Apply the fixes.** Implementation subagents apply the verified findings through the Impeccable command that owns each one (`/impeccable layout`, `clarify`, `typeset`, `adapt`, `polish`, ...), with one writer per file, removing or folding before adding. A change to a reusable token or component goes into the shared kit, if the project has one. Each persona also sees the other's previous rating and findings, so the two converge rather than pull apart.
+   - **When to stop:** both ratings are at least `--rating` **and** the critique score is still above N. If the round's changes were material, re-run stage 7's critique once to confirm. Otherwise, repeat until the round cap. If a rating sits steady between rounds, find out why and adjust before the next one.
 
 9. **Publish and write the plan.**
-   - **Publish the mockup** privately if the session can (for example with the `Artifact` tool, loading `artifact-design` first). Keep the local file as the source.
+   - **Publish the mockup** privately if the session can (for example with the `Artifact` tool, loading `artifact-design` first), with any shared-kit files it links. Keep the local file as the source.
    - **Write the plan** to `docs/plans/<YYYY-MM-DD>-<feature-slug>-ux.md`, or the project's plans folder, using the UTC date. Its sections:
      - **Goal and summary:** the problems and the outcome in one paragraph.
-     - **Current state:** the stage 1 pain points with `path:line` evidence.
+     - **Current state:** the core flows and the stage 1 pain points with `path:line` evidence.
      - **Design brief:** from shape.
-     - **Mockup:** the published link (if any), the local path, and the states and roles it covers.
-     - **Changes by surface:** for each route or component, what changes and why, mapped to the mockup state that shows it.
-     - **Decisions log:** every auto-accepted recommendation (stage gate, question, options, pick).
+     - **Mockup:** the published link (if any), the local path, and the states, roles and core flows it covers.
+     - **Changes by surface:** for each route or component, what changes and why, mapped to the mockup state that shows it. Name what was removed or folded.
+     - **Shared kit:** the kit changes made, and any that need a product-code PR. Leave it out if there were none.
+     - **Decisions log:** every auto-accepted recommendation (stage gate, question, options, pick), each addition a fixer made and why, and each score that sat steady, with its cause and the change made.
      - **Scores:** the critique score per round, the persona ratings per round, and the final values.
      - **Implementation sequence:** small PRs in merge order. Each lists its files, its tests, and whatever else the project's rules require per change (stories, specs, parity checks, threat models).
      - **Risks and open questions:** anything left for the owner.
@@ -99,6 +108,7 @@ Report one line per stage (`Stage 3/9 done: ...`) and nothing more until the end
 Keep it short:
 - the mockup link (if published) and the plan path written in full
 - the final critique score, the final UX and Designer ratings, and the number of rounds used
-- the 3–5 biggest UX changes the plan proposes
+- the 3–5 biggest UX changes the plan proposes, and what was removed or folded
+- any shared-kit changes
 - the number of auto-accepted decisions, plus any you could not default and stopped on
 - anything left for the owner
