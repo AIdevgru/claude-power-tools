@@ -1203,7 +1203,8 @@ export const hyperlink = (url, text) => `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
 // isn't JSON. One short line of plain text: it lands in the terminal.
 export function sessionModel(input) {
   let m;
-  try { m = JSON.parse(input)?.model; } catch { return null; }
+  // A PowerShell pipe (a status line wrapped in a .ps1) starts the JSON with a byte order mark.
+  try { m = JSON.parse(String(input).replace(/^﻿/, ""))?.model; } catch { return null; }
   const name = typeof m === "string" ? m : m?.display_name || m?.id;
   if (typeof name !== "string") return null;
   const text = name.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();

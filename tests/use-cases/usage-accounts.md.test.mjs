@@ -189,6 +189,7 @@ test("the session's model follows the account, as Claude Code names it", () => {
   assert.equal(m.statusText({ cache: loggedOut, book, now: T0, model: opus }), "Opus 5.5 · usage: not logged in with a Claude subscription (no OAuth token) · 2 accounts");
 
   assert.equal(m.sessionModel(input({ id: "claude-haiku-5-5" })), "claude-haiku-5-5", "no display name: the id");
+  assert.equal(m.sessionModel(`﻿${input({ display_name: "Opus 5.5" })}`), "Opus 5.5", "a PowerShell pipe's byte order mark");
   for (const bad of ["", "not json", "null", "{}", input(null), input({ display_name: 5 })]) assert.equal(m.sessionModel(bad), null, bad);
   assert.equal(m.sessionModel(input({ display_name: `Opus${ESC}[2J${ESC}]8;;http://x\x07 5.5\n` })), "Opus 5.5", "escape codes and newlines dropped");
   assert.equal(m.sessionModel(input({ display_name: "x".repeat(60) })), `${"x".repeat(39)}…`);
