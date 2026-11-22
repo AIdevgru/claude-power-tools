@@ -30,8 +30,8 @@
 //   status | reset | paths   reset (and finish-resume) also remove old resume claims.
 //   rehearse                     Run the whole cycle in a scratch folder with made-up usage; exit 1 on a failure.
 //   statusline [--no-link]       One line for Claude Code's status line, from the cached reading:
-//                                the logged-in account, the session's model (from the JSON on
-//                                stdin) and each window's usage and reset, as a link to the
+//                                the session's model (from the JSON on stdin), the logged-in
+//                                account and each window's usage and reset, as a link to the
 //                                accounts page.
 //   accounts [--json]            Every account this machine has logged in to, with its last usage
 //                                and resets. `accounts forget EMAIL` drops one.
@@ -1204,7 +1204,7 @@ export const hyperlink = (url, text) => `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
 export function sessionModel(input) {
   let m;
   // A PowerShell pipe (a status line wrapped in a .ps1) starts the JSON with a byte order mark.
-  try { m = JSON.parse(String(input).replace(/^﻿/, ""))?.model; } catch { return null; }
+  try { m = JSON.parse(String(input).replace(/^\uFEFF/, ""))?.model; } catch { return null; }
   const name = typeof m === "string" ? m : m?.display_name || m?.id;
   if (typeof name !== "string") return null;
   const text = name.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
@@ -1219,17 +1219,17 @@ function statusInput() {
 }
 
 // One short line for Claude Code's status line, from the shared cache only (no API call):
-// "lee@example.com (+1) · Opus 5.5 · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)".
-// The session's model follows the account. Each window carries its own reset, so it's clear which
-// one resets when. "(+1)" counts the other accounts this machine knows; with link, the whole line
-// opens the page that lists them all.
+// "Opus 5.5 · lee@example.com (+1) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)".
+// The session's model comes first, then the account. Each window carries its own reset, so it's
+// clear which one resets when. "(+1)" counts the other accounts this machine knows; with link, the
+// whole line opens the page that lists them all.
 export function statusText({ cache, state = {}, now = Date.now(), book = null, link = null, model = null }) {
   const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number").sort(byWindow);
   const account = cache?.account ?? null;
   const others = Object.keys(book?.accounts ?? {}).filter((k) => k !== account?.key).length;
   const parts = [];
-  if (account?.email) parts.push(others ? `${account.email} (+${others})` : account.email);
   if (model) parts.push(model);
+  if (account?.email) parts.push(others ? `${account.email} (+${others})` : account.email);
   if (!windows.length) parts.push(cache?.error ? `usage: ${cache.error}` : "usage: no reading yet");
   else {
     for (const w of windows) {
