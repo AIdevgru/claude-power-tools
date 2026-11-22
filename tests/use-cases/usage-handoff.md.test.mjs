@@ -177,6 +177,40 @@ test("the hook re-reads usage every 10 minutes when low and every minute near th
   rmSync(path.join(HOME, "usage-cache.json"), { force: true });
 });
 
+test("the status line reads again once the shared reading is old, so it stays current with the hook off", async () => {
+  const { statusCache, statusText } = mod;
+  const file = path.join(HOME, "usage-cache.json");
+  rmSync(file, { force: true });
+  let reads = 0;
+  const reading = (five) => async () => ((reads += 1), { windows: parseWindows(usage(five)) });
+  // The last reading was taken an hour ago (by a hook, before it was switched off).
+  writeFileSync(file, JSON.stringify({ at: T0 - 60 * MIN, windows: parseWindows(usage(12)) }));
+  const now = await statusCache({ now: T0, read: reading(40), login: null });
+  assert.equal(reads, 1, "an hour-old reading is read again");
+  assert.equal(now.windows[0].pct, 40);
+  assert.doesNotMatch(statusText({ cache: now, now: T0 }), /min old/);
+  // Within the hooks' 10 minutes, every refresh of every session's line shares that reading.
+  for (const t of [T0 + MIN, T0 + 5 * MIN, T0 + 9 * MIN]) await statusCache({ now: t, read: reading(99), login: null });
+  assert.equal(reads, 1, "no extra call inside the cache time");
+  assert.equal((await statusCache({ now: T0 + 10 * MIN, read: reading(88), login: null })).windows[0].pct, 88);
+  assert.equal(reads, 2, "the next one after 10 minutes");
+  // Near the limit the reading is good for a minute only, as it is for the hooks.
+  assert.equal(cacheTtlMs(88), 60_000);
+  assert.equal((await statusCache({ now: T0 + 11 * MIN, read: reading(93), login: null })).windows[0].pct, 93);
+  assert.equal(reads, 3);
+  // Another session's line is reading right now (its lease): this one shows the last reading.
+  const before = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify({ ...before, leaseAt: T0 + 13 * MIN }));
+  assert.equal((await statusCache({ now: T0 + 13 * MIN, read: reading(97), login: null })).windows[0].pct, 93);
+  assert.equal(reads, 3, "one reader at a time");
+  // No reading at all yet: the line reads one rather than saying "no reading yet".
+  rmSync(file, { force: true });
+  const first = await statusCache({ now: T0 + 20 * MIN, read: reading(5), login: null });
+  assert.equal(first.windows.find((w) => w.name === "five_hour").pct, 5);
+  assert.equal(reads, 4);
+  rmSync(file, { force: true });
+});
+
 test("logging in reads usage again at once, for the hooks and the status line", async () => {
   const { loginStamp, statusCache, statusText } = mod;
   // The stamp is a short hash of the saved token: it changes with the login, and never holds the token.
