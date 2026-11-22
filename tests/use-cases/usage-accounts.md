@@ -14,6 +14,11 @@ usage-handoff in the status line with `/usage-handoff statusline`.
    Team or Enterprise seat, each window's percentage and reset, and when the account was logged
    in. Who is logged in comes from Claude Code's own `.claude.json`; the token never leaves the
    credentials file. A reading that is still in the cache is filed once, not on every call.
+3. After the account comes the session's model, as Claude Code names it:
+   `lee@example.com · Opus 5.5 · 5h 64% (resets 12:10 AM EST) · ...`. Lee runs `/model` and picks
+   Sonnet for a quick chore, and the next refresh reads `lee@example.com · Sonnet 5.5 · ...`. It
+   comes from the JSON Claude Code sends the status line command, so it's right for each session,
+   and running `statusline` by hand in a terminal just leaves it out.
 
 ## Switching accounts
 

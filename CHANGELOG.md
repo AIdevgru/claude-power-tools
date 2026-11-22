@@ -89,6 +89,10 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   The skill schedules one job in this session for then, and that job sends, reports and closes.
   A scheduled `/all` prompt can't start the skill, since only the owner can, so the job's prompt
   carries the steps itself. Nothing is sent or closed when you schedule it.
+- **The usage-handoff status line names the session's model.** It follows the logged-in account:
+  `lee@example.com (+1) · Opus 5.5 · 5h 64% (resets ...) · week 49% (resets ...)`. It's whatever
+  `/model` selected, from the JSON Claude Code sends the status line command, so each session shows
+  its own. Run by hand with nothing piped in, `statusline` leaves it out.
 
 ### Fixed
 
