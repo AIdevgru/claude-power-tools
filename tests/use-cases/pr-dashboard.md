@@ -19,9 +19,3 @@ job at a time.
    messaged, so a busy session isn't interrupted to repeat what it already
    wrote. With `--fresh-within 900`, those current lines count as replies at
    once, and the dashboard waits only for the sessions it asked.
-6. One summary reads oddly, and Ana wants to know which model wrote it. The
-   board's last line says `model claude-haiku-5-5`. She sets
-   `PR_DASHBOARD_MODEL=claude-sonnet-5-5`, runs it again, and the last line
-   now names Sonnet. `--json` gives the same name as `claude.model`. With
-   `--no-claude` no model is asked, so the line is gone, and
-   `/pr-dashboard line` stays a single line.

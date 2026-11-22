@@ -89,10 +89,6 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
   The skill schedules one job in this session for then, and that job sends, reports and closes.
   A scheduled `/all` prompt can't start the skill, since only the owner can, so the job's prompt
   carries the steps itself. Nothing is sent or closed when you schedule it.
-- **pr-dashboard names the model that filled the board.** The last line of the board is
-  `model   claude-haiku-5-5` (in chat, ``model `claude-haiku-5-5` ``): the `--model` or
-  `PR_DASHBOARD_MODEL` the script asked. `--json` carries it as `claude.model`. It isn't shown
-  when no model was asked: `--no-claude`, `actions` alone, or `line` alone, which stays one line.
 
 ### Fixed
 

@@ -2073,7 +2073,6 @@ class Ctx:
     watch: int | None = None
     claude_age: int | None = None
     refreshing: bool = False
-    model: str | None = None   # the --model asked to fill the template; None when Claude isn't asked
 
 
 def ph(width: int) -> str:
@@ -2544,18 +2543,12 @@ def render_needs(ctx: Ctx) -> list[str]:
     return lines
 
 
-def model_name(ctx: Ctx) -> str:
-    return clean(ctx.model)
-
-
 def render_footer(ctx: Ctx) -> list[str]:
     out = []
     f = ctx.fill
     if f and f.source == "fallback" and f.reason:
         out.append(cut(f"summary unavailable ({f.reason})", WIDTH))
-    if model_name(ctx):   # known from the start, so the skeleton already reserves this line
-        out.append(cut(f"model   {model_name(ctx)}", WIDTH))
-    if ctx.watch is not None:   # stays the last line: watch mode redraws it in place
+    if ctx.watch is not None:
         bits = [f"refresh {ctx.watch}s"]
         if ctx.refreshing:
             bits.insert(0, f"refreshing {spinner(ctx)}")
@@ -2786,8 +2779,6 @@ def render_md(ctx: Ctx) -> list[str]:
     f = ctx.fill
     if f and f.source == "fallback" and f.reason:
         lines += ["", f"_summary unavailable ({md(f.reason)})_"]
-    if model_name(ctx):
-        lines += ["", f"model {md_code(model_name(ctx))}"]
     return lines
 
 
@@ -3038,7 +3029,6 @@ def make_ctx(orch: Orchestrator, views, *, final: bool, spin: int = 0, shape=Non
                spin=spin, final=final, shape=shape or {}, scope=orch.args.pr, labels_cache=orch.caches.labels,
                jobs_err=set(orch.jobs_err), elapsed_s=max(0.0, now - (orch.peers.since or orch.t0)),
                peer_total=peer_total, watch=watch, refreshing=refreshing,
-               model=orch.args.model if claude_wanted else None,
                claude_age=int(now - orch.caches.last_fill_at) if watch is not None and orch.caches.last_fill else None)
 
 
@@ -3080,7 +3070,7 @@ def to_json(orch: Orchestrator, ctx: Ctx) -> str:
                       for k, v in people["lines"].items()}},
         "claims": orch.data["claims"],
         "claude": None if not fill else {
-            "status": fill.source, "model": ctx.model, "reason": fill.reason, "cost_usd": fill.cost, "ms": fill.ms,
+            "status": fill.source, "reason": fill.reason, "cost_usd": fill.cost, "ms": fill.ms,
             "fill": {"one_line": fill.one_line, "merge_order": fill.merge_order, "order_source": fill.order_source,
                      "notes": fill.notes, "contradictions": fill.contra, "needs_you": fill.needs,
                      "needs_from": fill.needs_from, "labels": fill.labels}},

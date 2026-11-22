@@ -660,33 +660,6 @@ class RenderText(unittest.TestCase):
         self.assertNotIn("claude", orch.f.calls)
         self.assertNotIn("summary unavailable", "\n".join(lines))
         self.assertTrue(lines[0].startswith("RED  main red, 7 open, 3 queued, 5 draft, 3 conflict"))
-        self.assertFalse(any(l.startswith("model") for l in lines))   # no model was asked
-
-    def test_selected_model_named_in_footer(self):
-        argv, fetch = asked(["--format", "text"])
-        rc, lines, _ = run(argv, fetch=fetch)
-        self.assertEqual(lines[-1], "model   claude-haiku-5-5")
-        argv, fetch = asked(["--format", "text", "--model", "claude-sonnet-5-5"])
-        rc, lines, _ = run(argv, fetch=fetch)
-        self.assertEqual(lines[-1], "model   claude-sonnet-5-5")
-        self.assertEqual(sum(1 for l in lines if l.startswith("model")), 1)
-        rc, lines, _ = text(["--one-line", "--actions", "--no-peers"])   # Claude fills the line here too
-        self.assertEqual(lines[-1], "model   claude-haiku-5-5")
-        rc, lines, _ = text(["--actions"])                               # Claude isn't asked
-        self.assertFalse(any(l.startswith("model") for l in lines))
-
-    def test_model_named_when_claude_fails(self):
-        def boom(d):
-            raise ghs.ClaudeError("timeout 30s")
-        argv, fetch = asked(["--format", "text"], claude_fn=boom)
-        rc, lines, _ = run(argv, fetch=fetch)
-        self.assertEqual(lines[-2:], ["summary unavailable (timeout 30s)", "model   claude-haiku-5-5"])
-
-    def test_hostile_model_name_is_cleaned(self):
-        argv, fetch = asked(["--format", "text", "--model", "evil\x1b[2J—" + "x" * 120])
-        rc, lines, _ = run(argv, fetch=fetch)
-        check_text_frame(self, lines)
-        self.assertTrue(lines[-1].startswith("model   evil-xxx"))
 
     def test_gh_down(self):
         rc, lines, _ = text(["--no-peers"], fetch=FakeFetch(fail={"prs"}))
@@ -805,15 +778,6 @@ class Geometry(unittest.TestCase):
                         if l.startswith(("|-- ", "`-- ")) and len(l) > c:
                             self.assertEqual(l[c - 1], " ", l)
 
-    def test_model_line_reserved_and_watch_line_last(self):
-        orch, ctx, shape = self.frames([])
-        sk = copy.copy(ctx)
-        sk.board, sk.people, sk.fill, sk.final, sk.shape = None, None, None, False, shape
-        self.assertEqual(ghs.render(sk)[-1], "model   claude-haiku-5-5")   # known before Claude answers
-        w = copy.copy(ctx)
-        w.watch, w.claude_age = 60, 180
-        self.assertEqual(ghs.render_footer(w), ["model   claude-haiku-5-5", "refresh 60s   claude 3m ago   Ctrl+C"])
-
     def test_no_cache_skeleton_defaults(self):
         orch, ctx, _ = self.frames([])
         sk = copy.copy(ctx)
@@ -895,12 +859,6 @@ class Markdown(unittest.TestCase):
         lines = self.md(["--one-line"])
         self.assertEqual(len(lines), 1)
         self.assertRegex(lines[0], r"^\*\*RED\*\* · .+ · \d\d:\d\dZ$")
-
-    def test_model_md(self):
-        self.assertEqual(self.md()[-1], "model `claude-haiku-5-5`")
-        self.assertEqual(self.md(["--model", "claude-opus-5-5"])[-1], "model `claude-opus-5-5`")
-        self.assertFalse(any(l.startswith("model") for l in self.md(["--no-claude"])))
-        self.assertFalse(any(l.startswith("model") for l in self.md(["--actions"])))
 
 
 def raw_with(*, extra_prs=(), extra_runs=(), extra_jobs=None):
@@ -1147,14 +1105,6 @@ class JsonOutput(unittest.TestCase):
         p93 = next(p for p in d["prs"] if p["number"] == 93)
         self.assertEqual((p93["state"], p93["eta"], p93["view"]["token"]), ("ready", "now", "ready"))
         self.assertEqual(d["claude"]["status"], "claude")
-        self.assertEqual(d["claude"]["model"], "claude-haiku-5-5")
-
-    def test_model_null_when_claude_off(self):
-        argv, fetch = asked(["--json", "--no-claude"])
-        rc, lines, _ = run(argv, fetch=fetch)
-        d = json.loads(lines[0])
-        self.assertEqual(d["claude"]["status"], "off")
-        self.assertIsNone(d["claude"]["model"])
 
 
 class Terminal(unittest.TestCase):
