@@ -175,6 +175,26 @@ test("the status line leads with the account, counts the others, and links to th
   assert.equal(m.statusText({ cache: { ...cache, account: undefined }, now: T0 }), `5h 12% (resets ${soon})`, "a reading not filed yet reads as before");
 });
 
+test("the status line leads with the session's model, as Claude Code names it", () => {
+  const cache = { at: T0, account: WORK, windows: [{ name: "five_hour", pct: 12.4, resetsAt: T0 + 30 * MIN }] };
+  const soon = m.localTime(T0 + 30 * MIN, T0);
+  const book = { current: "u1/o2", accounts: { "u1/o1": {}, "u1/o2": {} } };
+  const input = (model) => JSON.stringify({ hook_event_name: "Status", session_id: "abc", model, workspace: { current_dir: "/repo" } });
+  const opus = m.sessionModel(input({ id: "claude-opus-5-5", display_name: "Opus 5.5" }));
+  assert.equal(opus, "Opus 5.5");
+  assert.equal(m.statusText({ cache, book, now: T0, model: opus }), `Opus 5.5 · lee@acme.dev (+1) · 5h 12% (resets ${soon})`);
+  // after /model sonnet, the next refresh names Sonnet
+  assert.equal(m.statusText({ cache, now: T0, model: m.sessionModel(input({ id: "claude-sonnet-5-5", display_name: "Sonnet 5.5" })) }), `Sonnet 5.5 · lee@acme.dev · 5h 12% (resets ${soon})`);
+  const loggedOut = { at: T0, error: "not logged in with a Claude subscription (no OAuth token)", account: null };
+  assert.equal(m.statusText({ cache: loggedOut, book, now: T0, model: opus }), "Opus 5.5 · usage: not logged in with a Claude subscription (no OAuth token) · 2 accounts");
+
+  assert.equal(m.sessionModel(input({ id: "claude-haiku-5-5" })), "claude-haiku-5-5", "no display name: the id");
+  assert.equal(m.sessionModel(`\uFEFF${input({ display_name: "Opus 5.5" })}`), "Opus 5.5", "a PowerShell pipe's byte order mark");
+  for (const bad of ["", "not json", "null", "{}", input(null), input({ display_name: 5 })]) assert.equal(m.sessionModel(bad), null, bad);
+  assert.equal(m.sessionModel(input({ display_name: `Opus${ESC}[2J${ESC}]8;;http://x\x07 5.5\n` })), "Opus 5.5", "escape codes and newlines dropped");
+  assert.equal(m.sessionModel(input({ display_name: "x".repeat(60) })), `${"x".repeat(39)}…`);
+});
+
 test("/usage-handoff accounts lists every account, the logged-in one first and starred", () => {
   const book = {
     current: "u1/o2",
@@ -256,6 +276,11 @@ test("end to end: check files the reading, the status line links to the page, ac
   assert.ok(line.endsWith(`${ESC}]8;;\x07`));
   assert.ok(existsSync(path.join(home, "accounts.html")));
   assert.match(run("statusline", "--no-link"), /^lee@example\.com · 5h 64% \(resets [^)]+\) · week 49%/);
+  // Claude Code pipes the session's JSON in; the model comes first
+  const piped = execFileSync(process.execPath, [SCRIPT, "statusline", "--no-link"], {
+    encoding: "utf8", env, input: JSON.stringify({ session_id: "abc", model: { id: "claude-opus-5-5", display_name: "Opus 5.5" } }),
+  });
+  assert.match(piped, /^Opus 5\.5 · lee@example\.com · 5h 64% \(resets [^)]+\) · week 49%/);
 
   const listed = run("accounts").trim();
   assert.match(listed, /^\* lee@example\.com \(Max 5x\) · 5h 64% \(resets .+\) · week 49% \(resets .+\) · logged in since /);

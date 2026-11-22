@@ -30,8 +30,9 @@
 //   status | reset | paths   reset (and finish-resume) also remove old resume claims.
 //   rehearse                     Run the whole cycle in a scratch folder with made-up usage; exit 1 on a failure.
 //   statusline [--no-link]       One line for Claude Code's status line, from the cached reading:
-//                                the logged-in account and each window's usage and reset, as a
-//                                link to the accounts page.
+//                                the session's model (from the JSON on stdin), the logged-in
+//                                account and each window's usage and reset, as a link to the
+//                                accounts page.
 //   accounts [--json]            Every account this machine has logged in to, with its last usage
 //                                and resets. `accounts forget EMAIL` drops one.
 //
@@ -1197,15 +1198,37 @@ const toMs = (v) => (typeof v === "number" ? v : Date.parse(v));
 // OSC 8: text the terminal opens as a link (Ctrl+click, or Cmd+click on macOS).
 export const hyperlink = (url, text) => `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
 
+// The session's model as Claude Code names it ("Opus 5.5"), from the JSON it sends a status line
+// command on stdin; its id when there's no display name, null when there's neither or the input
+// isn't JSON. One short line of plain text: it lands in the terminal.
+export function sessionModel(input) {
+  let m;
+  // A PowerShell pipe (a status line wrapped in a .ps1) starts the JSON with a byte order mark.
+  try { m = JSON.parse(String(input).replace(/^\uFEFF/, ""))?.model; } catch { return null; }
+  const name = typeof m === "string" ? m : m?.display_name || m?.id;
+  if (typeof name !== "string") return null;
+  const text = name.replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g, "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
+  return text ? (text.length > 40 ? `${text.slice(0, 39)}…` : text) : null;
+}
+
+// What Claude Code wrote to the status line command's stdin, or "" when nothing was piped in (run
+// by hand in a terminal, stdin is the keyboard: reading it would wait for Ctrl+Z).
+function statusInput() {
+  if (process.stdin.isTTY) return "";
+  try { return readFileSync(0, "utf8"); } catch { return ""; }
+}
+
 // One short line for Claude Code's status line, from the shared cache only (no API call):
-// "lee@example.com (+1) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)".
-// Each window carries its own reset, so it's clear which one resets when. "(+1)" counts the other
-// accounts this machine knows; with link, the whole line opens the page that lists them all.
-export function statusText({ cache, state = {}, now = Date.now(), book = null, link = null }) {
+// "Opus 5.5 · lee@example.com (+1) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)".
+// The session's model comes first, then the account. Each window carries its own reset, so it's
+// clear which one resets when. "(+1)" counts the other accounts this machine knows; with link, the
+// whole line opens the page that lists them all.
+export function statusText({ cache, state = {}, now = Date.now(), book = null, link = null, model = null }) {
   const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number").sort(byWindow);
   const account = cache?.account ?? null;
   const others = Object.keys(book?.accounts ?? {}).filter((k) => k !== account?.key).length;
   const parts = [];
+  if (model) parts.push(model);
   if (account?.email) parts.push(others ? `${account.email} (+${others})` : account.email);
   if (!windows.length) parts.push(cache?.error ? `usage: ${cache.error}` : "usage: no reading yet");
   else {
@@ -1637,13 +1660,14 @@ async function main(argv) {
       clearLocks({ phase: "watching" });
       return out("reset: watching");
     case "statusline": {
-      // A status line command gets session JSON on stdin; this line needs none of it.
+      // A status line command gets the session's JSON on stdin; the line takes only its model.
+      const model = sessionModel(statusInput());
       const cache = await statusCache({ threshold: state.threshold ?? DEFAULT_THRESHOLD });
       const book = readAccounts();
       try {
         if (!existsSync(accountsPage())) writeAccounts(book); // so the link opens something from the start
       } catch {} // the line matters more than the page
-      return out(statusText({ cache, state, book, link: args.includes("--no-link") ? null : accountsUrl() }));
+      return out(statusText({ cache, state, book, model, link: args.includes("--no-link") ? null : accountsUrl() }));
     }
     case "accounts": {
       if (args[0] === "forget") {
