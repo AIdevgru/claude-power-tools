@@ -68,7 +68,7 @@ template, and prints one final markdown frame (tables, no code fences) on stdout
 |---|---|---|
 | `PR_DASHBOARD_HOME` | `~/.claude/pr-dashboard` | Peer status files (`status/`) and the headless-Claude cache (`claude/`). |
 | `PR_DASHBOARD_CI_WORKFLOW` | first of `ci-release.yml`, `ci.yml`, `ci.yaml`, `test.yml`, `tests.yml`, `build.yml` | The workflow whose runs make up the CI queue. `--ci-workflow` overrides it. |
-| `PR_DASHBOARD_MODEL` | `claude-haiku-5-5` | Model for the headless template fill. `--model` overrides it. |
+| `PR_DASHBOARD_MODEL` | `claude-haiku-5-5` | Model for the headless template fill. `--model` overrides it. The board's last line names it. |
 | `PR_DASHBOARD_INBOX` | `.claude-inbox`, then `.ForClaude` | Request inbox whose `in-progress/` claims name PR owners. |
 | `PR_DASHBOARD_CLAUDE` | `claude` on PATH | Path to the Claude Code CLI. |
 
