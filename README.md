@@ -42,6 +42,23 @@ Everything else builds on those three. You don't need to learn the rest to get v
 You need Node 20+, git and the GitHub CLI (`gh`, signed in). `pr-dashboard` and `fleet-status`
 also need Python 3.10+.
 
+**One line**, from a terminal (core skills; add the other plugins below as you like):
+
+```sh
+claude plugin marketplace add aidevgru/claude-power-tools && claude plugin install power-tools@aidevgru
+```
+
+Or with the installer, for short names linked so `git pull` updates them:
+
+```sh
+git clone https://github.com/aidevgru/claude-power-tools && node claude-power-tools/scripts/install.mjs --link
+```
+
+In Windows PowerShell 5.1, use `;` instead of `&&`. Pick one of the two, then open `/hooks` once
+(or restart Claude Code).
+
+### Step by step
+
 The collection comes as three plugins. Install the ones you want:
 
 | Plugin | What you get |
