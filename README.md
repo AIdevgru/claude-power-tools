@@ -4,8 +4,13 @@ Skills and hooks for running several [Claude Code](https://claude.com/claude-cod
 repository without them stepping on each other's work.
 
 - **Coordinate sessions:** a manager that keeps them moving, a status board, a PR and CI
-  dashboard, and an inbox you drop requests into.
+  dashboard, an inbox you drop requests into, and one message to every session at once.
+- **Ride out usage limits:** near the limit every session writes a handoff and stops, and the work
+  restarts by itself at the reset. A status line shows the model, the account and each window's
+  usage.
 - **Deliver work:** take a plan, ticket or PR all the way to a reviewed pull request.
+- **Design and test UI:** mockups, score-gated critique and polish, a screen reader test with NVDA,
+  and videos rendered to MP4.
 - **Start projects:** go from an empty folder to a running, deployed app.
 - **Stay safe:** a hook blocks the git commands that lose another session's work.
 
@@ -41,7 +46,7 @@ The collection comes as three plugins. Install the ones you want:
 
 | Plugin | What you get |
 |---|---|
-| **power-tools** | Coordinating sessions, the delivery pipelines, git-guard and its hooks. Start here. |
+| **power-tools** | Coordinating sessions, the delivery pipelines, usage-handoff and its status line, git-guard, and their hooks. Start here. |
 | **power-tools-ui** | The UI skills (`ux-mockup`, `ui-critique-loop`, `ui-finalize`, `screenreader`), `video` for Remotion videos, plus the bundled Impeccable. The pipelines use it for their UI gate when it's installed. |
 | **power-tools-projects** | `new-project`, `project` and `deploy`. Needs **power-tools-ui** for the mockup and splash-page steps. |
 
@@ -120,6 +125,7 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /usage-handoff off                Turn off the usage hook: near 95%, every session writes a
                                   handoff and stops; the work restarts when the limit resets
 /usage-handoff accounts           Usage and resets for every account you've logged in with
+/usage-handoff statusline         Put the model, account and usage in Claude Code's status line
 /show-email off                   Leave the account out of the status line (/show-model, /show-usage
                                   switch the other parts; all start on)
 ```
@@ -137,6 +143,7 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /ticket-triage                    Analyzes new tickets against the code; you pick which to act on
 /issues-to-plan docs/qa-bugs.md   Turns an issue list into a verified, PR-sequenced plan
 /combine-prs 101 104 105          Folds several PRs into one integration PR
+/drain-pr-queue                   Merges every green PR one at a time, updating conflicting ones
 ```
 
 **Design UI** (power-tools-ui)
@@ -181,12 +188,12 @@ Skills marked † start only when you type them; Claude won't pick them on its o
 | Skill | What it does | Needs |
 |---|---|---|
 | **fleet-manager** | Reads the dashboard, session statuses and inbox; gives each blocker one owner; gets conflicts and red CI fixed; combines piled-up PRs; lists what only you can decide. Run as `/loop /fleet-manager`. | `pr-dashboard`, `combine-prs`, `request-inbox` |
-| **all** | `/all "<message>"` sends the message to every running agent and session, then closes this session. `--at 5:30` does it at the next 5:30 instead, through a one-time job in this session. | — |
+| **all** † | `/all "<message>"` sends the message to every running agent and session, then closes this session. `--at 5:30` does it at the next 5:30 instead, through a one-time job in this session. | — |
 | **fleet-status** | Reads each session's status line (asking only those whose line is stale), shows a card per session plus unclaimed tracker tickets, and lets you message the sessions you pick. | — |
 | **pr-dashboard** | Shows open PRs in merge order with CI, queue ETAs, owners and a "Needs you" list. A script gathers every fact. | Python 3.10+ |
 | **request-inbox** | Handles requests you drop in `.claude-inbox/`: claims each one, acts on it, and answers in the file. | — |
 | **show-model**, **show-email**, **show-usage** † | Switch one part of usage-handoff's status line on or off: the session's model, the logged-in account, or each window's usage and reset. All start on; `/show-email` with no argument flips it, `on` or `off` sets it. | `usage-handoff` |
-| **usage-handoff** | A hook, on by default, that watches your Claude usage limits. Near the top it has every session and its subagents write a handoff, and one session uses up the rest of the window. A restart job at the reset tells every running agent to carry on and reopens closed sessions with `claude --resume`. Logging in to another account cancels the restart. `/usage-handoff off` turns it off; `/loop /usage-handoff` adds a watcher session. It also keeps each account you log in with, so `/usage-handoff accounts` (or a click on its status line) shows every account's usage and resets. | A Claude subscription login |
+| **usage-handoff** | A hook, on by default, that watches your Claude usage limits. Near the top it has every session and its subagents write a handoff, and one session uses up the rest of the window. A restart job at the reset tells every running agent to carry on and reopens closed sessions with `claude --resume`. Logging in to another account cancels the restart. `/usage-handoff off` turns it off; `/loop /usage-handoff` adds a watcher session. It also keeps each account you log in with, so `/usage-handoff accounts` (or a click on its status line) shows every account's usage and resets. `/usage-handoff statusline` sets up that status line: `Opus 5.5 · lee@example.com (+1) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)`. | A Claude subscription login |
 
 ### Deliver work (power-tools)
 
@@ -266,6 +273,10 @@ These run on their own once installed. If one errors, your command still runs.
   denial names the safe alternative.
 - **Merge gate** (opt-in, `/git-guard enable merge-gate`): Claude merges a PR only after you
   send `approve merge #N` as the first line of a message, and only once its checks are green.
+- **usage-handoff** reads your usage on each prompt and tool call, from a cache shared by every
+  session (refreshed every 1 to 10 minutes, faster near the limit). Near 95% it tells each session
+  and subagent once to write its handoff and stop. Silent otherwise; `/usage-handoff off` turns
+  it off.
 - **Hook doctor** speaks up at session start only when an installed hook is broken.
 - **Session start** notes list pending inbox requests and the next `/new-project` step.
 - **fleet-manager debounce** skips `/fleet-manager` passes that ran minutes ago or would find
@@ -278,11 +289,10 @@ Events, details and the exact settings the installer writes: [docs/hooks.md](doc
 Nothing to set up. Every enhancement starts on and has a switch:
 
 - **Remote Control in every new session:** a core install (a plain installer run, `--all`, or
-  `/update` of one) sets
-  `remoteControlAtStartup: true` in `settings.json`, the same switch as `/config`'s "Enable
-  Remote Control for all sessions". It does this only when `settings.json` doesn't set it yet, so
-  your own choice stays. `--no-remote-control` stores `false`. A plugin install leaves it to
-  `/config`.
+  `/update` of one) sets `remoteControlAtStartup: true` in `settings.json`. That's the same
+  switch as `/config`'s "Enable Remote Control for all sessions". It does this only when
+  `settings.json` doesn't set it yet, so your own choice stays. `--no-remote-control` stores
+  `false`. A plugin install leaves it to `/config`.
 - **The status line's parts:** `/show-model`, `/show-email` and `/show-usage`.
 - **The usage hook:** `/usage-handoff off`.
 
