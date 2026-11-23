@@ -108,6 +108,11 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Fixed
 
+- **The usage-handoff status line stays current with the hook off.** It only showed the hooks'
+  last reading, so after `/usage-handoff off` its numbers froze until the login token was renewed,
+  hours later. It now reads again by the hooks' rule, through their shared cache, once the
+  reading is older than the cache time: 10 minutes far from the limit, down to 30 seconds at it.
+  All sessions' lines and hooks together still make one request per interval.
 - **usage-handoff resumes when a limit resets early.** It used to wait for the predicted reset
   time even when the window had already reset. While waiting, the waker now checks the shared
   reading, and the status line says `reset early, resuming`.

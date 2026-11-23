@@ -29,7 +29,8 @@
 //   hook on|off|status           Switch the hook below on or off for every session (default on).
 //   status | reset | paths   reset (and finish-resume) also remove old resume claims.
 //   rehearse                     Run the whole cycle in a scratch folder with made-up usage; exit 1 on a failure.
-//   statusline [--no-link]       One line for Claude Code's status line, from the cached reading:
+//   statusline [--no-link]       One line for Claude Code's status line, from the shared reading
+//                                (read again once it's older than the hooks' cache time):
 //                                the session's model (from the JSON on stdin), the logged-in
 //                                account and each window's usage and reset, as a link to the
 //                                accounts page.
@@ -248,11 +249,14 @@ export async function cachedWindows(now = Date.now(), threshold = DEFAULT_THRESH
   return { ...r, cached: false, account: fileReading(next, { now, login, identify }).account ?? null };
 }
 
-// The status line's reading. It never calls the endpoint for an old reading, only when the login
-// changed since the reading was taken (the owner just logged in, say), so the line is right at once.
+// The status line's reading. It reads again by the hooks' rule, through their shared cache: when
+// the reading is older than cacheTtlMs (10 minutes far from the limit, 30 seconds at it), or the
+// login changed since it was taken (the owner just logged in, say). So it stays current with the
+// hook off, and every session's line and hook together still make one request per interval.
 export async function statusCache({ now = Date.now(), threshold = DEFAULT_THRESHOLD, read = readWindows, login = loginStamp(), identify = currentAccount } = {}) {
   let cache = readJson(cacheFile(), null);
-  if (login != null && cache?.login !== login) {
+  const old = !cache?.at || now - cache.at >= cacheTtlMs(cache.windows?.[0]?.pct ?? null, threshold);
+  if (old || (login != null && cache?.login !== login)) {
     await cachedWindows(now, threshold, read, false, login, identify);
     cache = readJson(cacheFile(), cache);
   }

@@ -83,9 +83,13 @@ subscription with a 5-hour usage window.
 2. Lee wants to see the limit coming, so they run `/usage-handoff statusline` and, after saying
    yes, get a status line like `5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)`:
    each window carries its own reset, as a weekday when it's later this week, and 5h always comes
-   first. It reads the reading the
-   hooks already share, so it never calls the usage endpoint. While handing off it says
-   `handing off, back 12:10 AM EST`; a reading older than 15 minutes says how old it is.
-3. The hook doesn't run after Read, Grep, Glob and other quick lookups. Each hook call costs a
+   first. It uses the reading the hooks share, and reads again by their rule once that's older
+   than the cache time (10 minutes far from the limit, down to 30 seconds at it), so every
+   session's line and hook together still make one request per interval. While handing off it
+   says `handing off, back 12:10 AM EST`; a reading older than 15 minutes (the last read failed,
+   say) says how old it is.
+3. Later Lee runs `/usage-handoff off` for a while. The status line keeps reading for itself, so
+   its numbers stay current instead of freezing at the last reading a hook took.
+4. The hook doesn't run after Read, Grep, Glob and other quick lookups. Each hook call costs a
    Node start, and those tools run most often; any prompt, command, edit, subagent, skill or MCP
    call still checks usage.
