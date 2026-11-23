@@ -33,7 +33,11 @@
 //                                the session's model (from the JSON on stdin), the logged-in
 //                                account and each window's usage and reset, as a link to the
 //                                accounts page.
-//   accounts [--json]            Every account this machine has logged in to, with its last usage
+//   show [model|email|usage] [on|off|toggle]
+//                                Switch one part of the status line (all on by default; stored in
+//                                config.json). With no value it prints the part's setting, with no
+//                                part every part's. /show-model, /show-email and /show-usage run it.
+//   accounts [--json]          Every account this machine has logged in to, with its last usage
 //                                and resets. `accounts forget EMAIL` drops one.
 //
 //   --hook                       Hook mode (UserPromptSubmit, PostToolUse): reads hook JSON on stdin.
@@ -406,11 +410,53 @@ export function hookEnabled(env = process.env) {
   try { return JSON.parse(readFileSync(configFile(), "utf8")).hook !== "off"; } catch { return true; }
 }
 
-function setHook(value) {
-  let cfg = {};
-  try { cfg = JSON.parse(readFileSync(configFile(), "utf8")); } catch {}
+function readConfig() {
+  try { return JSON.parse(readFileSync(configFile(), "utf8")) ?? {}; } catch { return {}; }
+}
+
+function writeConfig(patch) {
   mkdirSync(home(), { recursive: true });
-  writeFileSync(configFile(), JSON.stringify({ ...cfg, hook: value }, null, 2) + "\n");
+  writeFileSync(configFile(), JSON.stringify({ ...readConfig(), ...patch }, null, 2) + "\n");
+}
+
+const setHook = (value) => writeConfig({ hook: value });
+
+// The status line's parts, each with its own switch (/show-model, /show-email, /show-usage). All
+// are on unless config.json's `show` turns one off.
+export const SHOW_PARTS = { model: "the session's model", email: "the logged-in account", usage: "each window's usage and reset" };
+// Own keys only: "constructor" or "toString" isn't a part.
+export const isPart = (part) => Object.hasOwn(SHOW_PARTS, part);
+
+export function showSettings(cfg = readConfig()) {
+  const show = cfg?.show ?? {};
+  return Object.fromEntries(Object.keys(SHOW_PARTS).map((p) => [p, show[p] !== false]));
+}
+
+// Sets one part on or off ("toggle" flips it) and returns every part's setting.
+export function setShow(part, value) {
+  if (!isPart(part)) throw new Error(`show: no part ${part}; parts: ${Object.keys(SHOW_PARTS).join(", ")}`);
+  if (!["on", "off", "toggle"].includes(value)) throw new Error(`show ${part}: on, off or toggle, not ${value}`);
+  const cfg = readConfig();
+  const now = showSettings(cfg);
+  const next = value === "toggle" ? !now[part] : value === "on";
+  writeConfig({ show: { ...(cfg.show ?? {}), [part]: next } });
+  return { ...now, [part]: next };
+}
+
+// Whether the user's settings run this script's status line, so a switch has something to change.
+// settings.local.json wins over settings.json, as in Claude Code. The path may be quoted either way.
+export function statusLineSet(dir = claudeDir()) {
+  for (const file of ["settings.local.json", "settings.json"]) {
+    let cmd;
+    try { cmd = JSON.parse(readFileSync(path.join(dir, file), "utf8"))?.statusLine?.command; } catch { continue; }
+    if (typeof cmd === "string") return /usage\.mjs['"]?\s+statusline\b/.test(cmd);
+  }
+  return false;
+}
+
+// One line per switch: "show-model: on (the session's model)".
+export function showText(show, parts = Object.keys(SHOW_PARTS)) {
+  return parts.map((p) => `show-${p}: ${show[p] ? "on" : "off"} (${SHOW_PARTS[p]})`).join("\n");
 }
 
 // ---- open sessions, from Claude Code's own session registry (~/.claude/sessions/<pid>.json) ----
@@ -1222,29 +1268,32 @@ function statusInput() {
 // "Opus 5.5 · lee@example.com (+1) · 5h 64% (resets 12:10 AM EST) · week 49% (resets Sun 4:00 PM EST)".
 // The session's model comes first, then the account. Each window carries its own reset, so it's
 // clear which one resets when. "(+1)" counts the other accounts this machine knows; with link, the
-// whole line opens the page that lists them all.
-export function statusText({ cache, state = {}, now = Date.now(), book = null, link = null, model = null }) {
+// whole line opens the page that lists them all. `show` (from showSettings) leaves parts out: email
+// off drops the account and its count, usage off the windows, their age and any error. A handoff
+// in progress is still named, since it's the fleet stopping, not a number.
+export function statusText({ cache, state = {}, now = Date.now(), book = null, link = null, model = null, show = showSettings({}) }) {
   const windows = (cache?.windows ?? []).filter((w) => typeof w.pct === "number").sort(byWindow);
   const account = cache?.account ?? null;
   const others = Object.keys(book?.accounts ?? {}).filter((k) => k !== account?.key).length;
   const parts = [];
-  if (model) parts.push(model);
-  if (account?.email) parts.push(others ? `${account.email} (+${others})` : account.email);
-  if (!windows.length) parts.push(cache?.error ? `usage: ${cache.error}` : "usage: no reading yet");
-  else {
+  if (show.model && model) parts.push(model);
+  if (show.email && account?.email) parts.push(others ? `${account.email} (+${others})` : account.email);
+  if (show.usage) {
+    if (!windows.length) parts.push(cache?.error ? `usage: ${cache.error}` : "usage: no reading yet");
     for (const w of windows) {
       const label = `${shortLabel(w.name)} ${Math.round(w.pct)}%`;
       parts.push(w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label);
     }
-    if (state.phase === "handoff" && resetEarly({ windows, state, now, threshold: state.threshold ?? DEFAULT_THRESHOLD })) parts.push("reset early, resuming");
-    else if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
-    else if (state.phase === "resuming") parts.push("resuming");
-    const ageMin = cache.at ? Math.round((now - cache.at) / 60_000) : null;
-    if (ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
   }
-  if (!account?.email && others) parts.push(`${others} account${others === 1 ? "" : "s"}`);
+  // A handoff in progress is named with or without a reading, and with usage off.
+  if (state.phase === "handoff" && windows.length && resetEarly({ windows, state, now, threshold: state.threshold ?? DEFAULT_THRESHOLD })) parts.push("reset early, resuming");
+  else if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
+  else if (state.phase === "resuming") parts.push("resuming");
+  const ageMin = windows.length && cache?.at ? Math.round((now - cache.at) / 60_000) : null;
+  if (show.usage && ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
+  if (show.email && !account?.email && others) parts.push(`${others} account${others === 1 ? "" : "s"}`);
   const text = parts.join(" · ");
-  return link ? hyperlink(link, text) : text;
+  return link && text ? hyperlink(link, text) : text;
 }
 
 // ---- every account, for the terminal and the accounts page ----
@@ -1667,7 +1716,17 @@ async function main(argv) {
       try {
         if (!existsSync(accountsPage())) writeAccounts(book); // so the link opens something from the start
       } catch {} // the line matters more than the page
-      return out(statusText({ cache, state, book, model, link: args.includes("--no-link") ? null : accountsUrl() }));
+      return out(statusText({ cache, state, book, model, show: showSettings(), link: args.includes("--no-link") ? null : accountsUrl() }));
+    }
+    case "show": {
+      const [part, value] = args;
+      if (!part) return out(showText(showSettings()));
+      if (!isPart(part)) throw new Error(`show: no part ${part}; parts: ${Object.keys(SHOW_PARTS).join(", ")}`);
+      const show = value ? setShow(part, value) : showSettings();
+      const lines = [showText(show, [part])];
+      if (value && !Object.values(show).some(Boolean)) lines.push("Every part is off, so the status line is empty.");
+      if (!statusLineSet()) lines.push("The status line isn't set up yet: /usage-handoff statusline shows how.");
+      return out(lines.join("\n"));
     }
     case "accounts": {
       if (args[0] === "forget") {

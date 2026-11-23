@@ -19,11 +19,16 @@ skills on her laptop.
    commit, the mode, the skills and the groups she asked for (`core`), which
    `/update` reads later. `--skills` names no group, so it adds none; a manifest
    from before groups were recorded gets them from its skills.
+   It also sets `remoteControlAtStartup: true` when `settings.json` doesn't set it
+   yet, so every new session starts with Remote Control (`--no-remote-control`
+   stores `false`; see `enhancement-switches.md`).
 3. She runs the installer again by accident. Nothing is duplicated: skills that
-   already exist are skipped, and hooks already present are left alone.
+   already exist are skipped, hooks already present are left alone, and a setting
+   already there keeps its value.
 4. Her teammate only wants the PR dashboard:
    `node scripts/install.mjs --skills pr-dashboard`. No hooks are added,
-   because the dashboard doesn't need any.
+   because the dashboard doesn't need any, and no setting either: that comes
+   with the core group.
 5. If `settings.json` is not valid JSON, the installer stops with a clear error
    instead of overwriting it.
 6. She also wants the UI skills: `--with ui` adds `ux-mockup`, `ui-critique-loop`,

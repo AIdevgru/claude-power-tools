@@ -120,6 +120,8 @@ Each line is something you can type as-is. With the plugin, put the plugin's nam
 /usage-handoff off                Turn off the usage hook: near 95%, every session writes a
                                   handoff and stops; the work restarts when the limit resets
 /usage-handoff accounts           Usage and resets for every account you've logged in with
+/show-email off                   Leave the account out of the status line (/show-model, /show-usage
+                                  switch the other parts; all start on)
 ```
 
 **Build and ship**
@@ -183,6 +185,7 @@ Skills marked † start only when you type them; Claude won't pick them on its o
 | **fleet-status** | Reads each session's status line (asking only those whose line is stale), shows a card per session plus unclaimed tracker tickets, and lets you message the sessions you pick. | — |
 | **pr-dashboard** | Shows open PRs in merge order with CI, queue ETAs, owners and a "Needs you" list. A script gathers every fact. | Python 3.10+ |
 | **request-inbox** | Handles requests you drop in `.claude-inbox/`: claims each one, acts on it, and answers in the file. | — |
+| **show-model**, **show-email**, **show-usage** † | Switch one part of usage-handoff's status line on or off: the session's model, the logged-in account, or each window's usage and reset. All start on; `/show-email` with no argument flips it, `on` or `off` sets it. | `usage-handoff` |
 | **usage-handoff** | A hook, on by default, that watches your Claude usage limits. Near the top it has every session and its subagents write a handoff, and one session uses up the rest of the window. A restart job at the reset tells every running agent to carry on and reopens closed sessions with `claude --resume`. Logging in to another account cancels the restart. `/usage-handoff off` turns it off; `/loop /usage-handoff` adds a watcher session. It also keeps each account you log in with, so `/usage-handoff accounts` (or a click on its status line) shows every account's usage and resets. | A Claude subscription login |
 
 ### Deliver work (power-tools)
@@ -272,7 +275,18 @@ Events, details and the exact settings the installer writes: [docs/hooks.md](doc
 
 ## Configuration
 
-Nothing to set up. Per-repo settings (tracker, push command, PR title format, merge method) go in
+Nothing to set up. Every enhancement starts on and has a switch:
+
+- **Remote Control in every new session:** a core install (a plain installer run, `--all`, or
+  `/update` of one) sets
+  `remoteControlAtStartup: true` in `settings.json`, the same switch as `/config`'s "Enable
+  Remote Control for all sessions". It does this only when `settings.json` doesn't set it yet, so
+  your own choice stays. `--no-remote-control` stores `false`. A plugin install leaves it to
+  `/config`.
+- **The status line's parts:** `/show-model`, `/show-email` and `/show-usage`.
+- **The usage hook:** `/usage-handoff off`.
+
+Per-repo settings (tracker, push command, PR title format, merge method) go in
 a `## Power tools` section of the repo's `CLAUDE.md` or `AGENTS.md`; see
 [docs/configuration.md](docs/configuration.md). On Windows, read
 [docs/windows.md](docs/windows.md) for PowerShell 5.1 quirks that look like real failures.

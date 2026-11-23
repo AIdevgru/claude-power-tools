@@ -8,6 +8,18 @@ version lives in `package.json` and in each `plugins/<plugin>/.claude-plugin/plu
 
 ### Added
 
+- **Every enhancement has a switch, and starts on.**
+  - **Remote Control in every session:** a core install (a plain installer run, `--all`, or
+    `/update` of one) sets `remoteControlAtStartup: true` in `settings.json` when it isn't set
+    yet. `--skills pr-dashboard` alone gets only the skill. A value already
+    there (from `/config` or by hand) stays. `--no-remote-control` stores `false`. The defaults
+    live in one table, `SETTING_DEFAULTS` in `scripts/install.mjs`, so more can be added.
+  - **`/show-model`, `/show-email`, `/show-usage`:** switch each part of usage-handoff's status
+    line. With no argument the command flips its part; `on` or `off` sets it. The setting is in
+    `~/.claude/usage-handoff/config.json` and covers every session. Email off also drops the
+    `(+1)` account count; usage off keeps a handoff in progress on the line. If the status line
+    isn't set up yet, the command says how.
+
 - **usage-handoff restarts everyone at the reset, and one session uses up the rest of the window.**
   - **The coordinator:** the first session the hook tells about the limit.
     - Once its own handoff is written, it runs `await-handoffs`. That waits, without using usage,
