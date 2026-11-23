@@ -87,6 +87,30 @@ test("the default comes with the core group: a one-skill install leaves it, /upd
   assert.equal(settingsOf(core).remoteControlAtStartup, true);
 });
 
+test("only a recorded core group brings the default, not one guessed from an older manifest's skills", () => {
+  const dir = target();
+  install(parseArgs(["--target", dir, "--skills", "pr-dashboard,update", "--no-hooks"]), quiet);
+  const file = path.join(dir, "claude-power-tools.json");
+  const { groups, ...old } = JSON.parse(readFileSync(file, "utf8"));
+  writeFileSync(file, JSON.stringify(old)); // a manifest from before groups were recorded
+  const r = install(parseArgs(["--target", dir, "--skills", "pr-dashboard,update", "--force"]), quiet);
+  assert.deepEqual(r.settingsSet, [], "pr-dashboard and update are core skills, but nobody asked for core");
+  assert.equal(existsSync(path.join(dir, "settings.json")) && Object.hasOwn(settingsOf(dir), "remoteControlAtStartup"), false);
+});
+
+test("--no-remote-control is written even with --no-hooks, so a later /update keeps it off", () => {
+  const dir = target();
+  const lines = [];
+  const r = install(parseArgs(["--target", dir, "--no-hooks", "--no-remote-control"]), (l) => lines.push(l));
+  assert.deepEqual(settingsOf(dir), { remoteControlAtStartup: false }, "only the asked-for setting, no hooks");
+  assert.deepEqual(r.hooksAdded, []);
+  assert.ok(lines.some((l) => l.startsWith("set remoteControlAtStartup: false")), lines.join("\n"));
+  assert.ok(!lines.some((l) => l.startsWith("hooks:")), "no word about hooks it was told to leave alone");
+  const upd = install(parseArgs(["--target", dir, "--skills", "fleet-status", "--force"]), quiet);
+  assert.deepEqual(upd.settingsSet, []);
+  assert.equal(settingsOf(dir).remoteControlAtStartup, false);
+});
+
 test("--no-hooks leaves settings.json alone, and a dry run only reports the setting", () => {
   const dir = target();
   install(parseArgs(["--target", dir, "--no-hooks"]), quiet);
@@ -131,6 +155,28 @@ test("the status line's parts are all on by default, and each can be left out", 
   assert.equal(m.statusText({ cache: old, now: T0, show: { ...on, usage: false } }), "lee@acme.dev", "the age is about the usage");
   const handoff = { phase: "handoff", resumeAt: new Date(T0 + 30 * MIN).toISOString(), threshold: 95 };
   assert.match(m.statusText({ cache, state: handoff, now: T0, show: { ...on, usage: false } }), /^lee@acme\.dev · handing off, back /);
+  const failed = { at: T0, error: "not logged in", account: WORK };
+  assert.match(m.statusText({ cache: failed, state: handoff, now: T0, show: { ...on, usage: false } }), /^lee@acme\.dev · handing off, back /, "with no reading too");
+  assert.match(m.statusText({ cache: failed, state: handoff, now: T0 }), /^lee@acme\.dev · usage: not logged in · handing off, back /);
+});
+
+test("only the three parts are parts, and a status line is found however its path is quoted", () => {
+  for (const p of ["model", "email", "usage"]) assert.ok(m.isPart(p), p);
+  for (const p of ["constructor", "toString", "__proto__", "hasOwnProperty"]) assert.ok(!m.isPart(p), p);
+  assert.throws(() => m.setShow("constructor", "off"), /no part constructor/);
+
+  const dir = mkdtempSync(path.join(tmpdir(), "switches-sl-"));
+  const put = (file, command) => writeFileSync(path.join(dir, file), JSON.stringify({ statusLine: { type: "command", command } }));
+  assert.equal(m.statusLineSet(dir), false, "no settings at all");
+  put("settings.json", "node '/home/lee/.claude/skills/usage-handoff/scripts/usage.mjs' statusline");
+  assert.equal(m.statusLineSet(dir), true, "single quotes");
+  put("settings.json", "node /home/lee/.claude/skills/usage-handoff/scripts/usage.mjs statusline --no-link");
+  assert.equal(m.statusLineSet(dir), true, "no quotes");
+  put("settings.local.json", "my-own-status-line.sh");
+  assert.equal(m.statusLineSet(dir), false, "settings.local.json wins");
+  put("settings.local.json", `node "C:/x/usage-handoff/scripts/usage.mjs" statusline`);
+  writeFileSync(path.join(dir, "settings.json"), "{}");
+  assert.equal(m.statusLineSet(dir), true, "set in settings.local.json only");
 });
 
 test("usage.mjs show flips, sets and lists the parts, stored in config.json", () => {

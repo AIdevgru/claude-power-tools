@@ -16,7 +16,8 @@
 //                   so `git pull` here updates the installed skills
 //   --force         replace skills that already exist; the old copies move to
 //                   <target>/backups/claude-power-tools/<UTC>/, outside skills/ so they don't load
-//   --no-hooks      don't touch settings.json (no hooks, no setting defaults)
+//   --no-hooks      don't touch settings.json (no hooks, no setting defaults; a --no-<flag> in
+//                   the same run is still written)
 //   --no-remote-control
 //                   store remoteControlAtStartup: false instead of the default true
 //   --dry-run       print what would change, change nothing
@@ -35,7 +36,7 @@
 // The manifest also records the groups asked for by name, which /update uses for new skills.
 //
 // Claude Code settings the collection turns on by default (SETTING_DEFAULTS) come with the core
-// group (a plain run, --all, or /update of an install that recorded core). They are written to
+// group (a plain run, --all, or /update of an install whose manifest recorded core). They are written to
 // settings.json only when it doesn't have them yet, so a value the owner set in /config or by hand
 // always stays. Its --no-<flag> writes the off value, which later runs and /update then keep.
 //
@@ -365,7 +366,9 @@ export function install(opts, log = console.log) {
     if (hint) report.notes.push(hint);
   }
 
-  if (opts.hooks) {
+  // --no-hooks leaves settings.json alone, except for an off switch asked for in the same run.
+  const off = opts.off ?? [];
+  if (opts.hooks || off.length) {
     const settingsPath = path.join(opts.target, "settings.json");
     let settings = {};
     if (existsSync(settingsPath)) {
@@ -376,11 +379,12 @@ export function install(opts, log = console.log) {
         throw new Error(`${settingsPath} is not valid JSON (${e.message}); fix it, or rerun with --no-hooks`);
       }
     }
-    const { settings: hooked, added } = mergeHooks(settings, hooksFor(selected, skillsDir, repo));
+    const { settings: hooked, added } = opts.hooks ? mergeHooks(settings, hooksFor(selected, skillsDir, repo)) : { settings, added: [] };
     // The defaults come with the core group, as its plugin's enhancements: a plain run, --all, or
-    // /update of an install that recorded core. `--skills pr-dashboard` alone gets only the skill.
-    const core = [...selectedGroups(opts), ...(before?.groups ?? groupsOf(recorded, skills))].includes("core");
-    const { settings: merged, set } = applySettingDefaults(hooked, opts.off ?? [], { defaults: core });
+    // /update of an install whose manifest recorded core. Only a recorded group counts, not one
+    // guessed from the skills, so `--skills pr-dashboard` alone never gets them.
+    const core = opts.hooks && [...selectedGroups(opts), ...(before?.groups ?? [])].includes("core");
+    const { settings: merged, set } = applySettingDefaults(hooked, off, { defaults: core });
     report.hooksAdded = added;
     report.settingsSet = set;
     if ((added.length || set.length) && !opts.dryRun) {
@@ -418,12 +422,12 @@ export function install(opts, log = console.log) {
   if (report.agents.length) log(`${pre}install ${report.agents.length} agent(s) into ${slash(agentsDir)}: ${report.agents.join(", ")}`);
   if (report.agentsSkipped.length) log(`agents skipped (already installed; --force replaces them): ${report.agentsSkipped.join(", ")}`);
   for (const b of report.backedUp) log(`${pre}back up the old copy to ${b}`);
-  if (opts.hooks) {
+  if (opts.hooks || off.length) {
     if (report.hooksAdded.length) {
       log(`${pre}add ${report.hooksAdded.length} hook(s) to ${slash(path.join(opts.target, "settings.json"))}:`);
       for (const h of report.hooksAdded) log(`  ${h}`);
       if (!opts.dryRun) log("Open /hooks once (or restart Claude Code) so running sessions pick the hooks up.");
-    } else {
+    } else if (opts.hooks) {
       log("hooks: already present");
     }
     for (const s of report.settingsSet) {

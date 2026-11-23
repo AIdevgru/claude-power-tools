@@ -46,14 +46,14 @@ skill from a group you left out say which plugin or group to add, and skip that 
 | `--all` | Install `core`, `ui` and `projects`. graphify still needs `--with graphify`. |
 | `--skills a,b` | Install only these skills. |
 | `--force` | Replace installed skills. The old copies move to `~/.claude/backups/claude-power-tools/<UTC>/`, outside `skills/`, so they don't load as duplicates. |
-| `--no-hooks` | Leave `settings.json` alone: no hooks, no setting defaults. |
+| `--no-hooks` | Leave `settings.json` alone: no hooks, no setting defaults. A `--no-remote-control` in the same run is still written. |
 | `--no-remote-control` | Store `remoteControlAtStartup: false` instead of turning Remote Control on (see below). |
 | `--target DIR` | Install into `DIR` instead of `~/.claude` (or `CLAUDE_CONFIG_DIR`). |
 
 ## Settings it turns on
 
 Besides hooks, an install of the `core` group (a plain run, `--all`, or `/update` of an install
-that recorded `core`) sets Claude Code settings the collection turns on by default, each only
+whose manifest recorded `core`) sets Claude Code settings the collection turns on by default, each only
 when `settings.json` doesn't have it yet. `--skills pr-dashboard` alone gets only the skill. A value you set in `/config` or by hand always stays,
 and `/update` runs the same installer, so it keeps your choice too.
 

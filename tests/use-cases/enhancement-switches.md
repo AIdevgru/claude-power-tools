@@ -22,8 +22,12 @@ start, and wants to turn off any piece without editing JSON by hand.
 5. The default comes with the core group, as the main plugin's enhancement. A teammate who runs
    `--skills pr-dashboard` gets only the dashboard, and no `settings.json`. `/update` reruns the
    installer with `--skills`, but Lee's manifest records the `core` group, so the default still
-   applies there. An explicit `--no-remote-control` is written in either case.
-6. `--no-hooks` still means hands off `settings.json`: no hooks and no setting defaults. A dry run
+   applies there. Only a group the manifest recorded counts: an older manifest that lists just
+   `pr-dashboard` isn't taken for a core install. An explicit `--no-remote-control` is written in
+   either case.
+6. `--no-hooks` still means hands off `settings.json`: no hooks and no setting defaults. A
+   `--no-remote-control` in the same run is still written, so a later `/update` can't turn Remote
+   Control on against Sam's wishes. A dry run
    shows the setting it would write and writes nothing.
 7. The default sits in one table, `SETTING_DEFAULTS` in `scripts/install.mjs`, so the next
    setting the collection turns on is one more row.
@@ -41,12 +45,13 @@ start, and wants to turn off any piece without editing JSON by hand.
 4. `/show-model off` drops the model, and the line starts with the account.
    `/show-usage off` drops the percentages, the resets, an old reading's age and a failed
    reading's error. If the fleet is handing off at the limit, the line still says
-   `handing off, back 4:00 PM EST`, because that's the fleet stopping, not a number.
+   `handing off, back 4:00 PM EST`, even with no reading, because that's the fleet stopping, not a
+   number.
 5. With every part off the line is empty, and the command says so.
 6. The switches are stored in `~/.claude/usage-handoff/config.json` under `show`, next to the hook
    switch. They cover every session on the machine, and each status line picks them up at its next
    refresh.
-7. Sam hasn't set up the status line yet. `/show-usage off` still stores the choice and adds
+7. Sam hasn't set up the status line yet (in `settings.json` or `settings.local.json`). `/show-usage off` still stores the choice and adds
    `The status line isn't set up yet: /usage-handoff statusline shows how.`
 8. The three commands start only when typed (`disable-model-invocation`), so Claude never switches
    a part on its own. Each one runs usage-handoff's script next to it

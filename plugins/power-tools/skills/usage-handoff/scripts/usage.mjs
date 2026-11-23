@@ -424,6 +424,8 @@ const setHook = (value) => writeConfig({ hook: value });
 // The status line's parts, each with its own switch (/show-model, /show-email, /show-usage). All
 // are on unless config.json's `show` turns one off.
 export const SHOW_PARTS = { model: "the session's model", email: "the logged-in account", usage: "each window's usage and reset" };
+// Own keys only: "constructor" or "toString" isn't a part.
+export const isPart = (part) => Object.hasOwn(SHOW_PARTS, part);
 
 export function showSettings(cfg = readConfig()) {
   const show = cfg?.show ?? {};
@@ -432,7 +434,7 @@ export function showSettings(cfg = readConfig()) {
 
 // Sets one part on or off ("toggle" flips it) and returns every part's setting.
 export function setShow(part, value) {
-  if (!SHOW_PARTS[part]) throw new Error(`show: no part ${part}; parts: ${Object.keys(SHOW_PARTS).join(", ")}`);
+  if (!isPart(part)) throw new Error(`show: no part ${part}; parts: ${Object.keys(SHOW_PARTS).join(", ")}`);
   if (!["on", "off", "toggle"].includes(value)) throw new Error(`show ${part}: on, off or toggle, not ${value}`);
   const cfg = readConfig();
   const now = showSettings(cfg);
@@ -441,12 +443,15 @@ export function setShow(part, value) {
   return { ...now, [part]: next };
 }
 
-// Whether settings.json runs this script's status line, so a switch has something to change.
+// Whether the user's settings run this script's status line, so a switch has something to change.
+// settings.local.json wins over settings.json, as in Claude Code. The path may be quoted either way.
 export function statusLineSet(dir = claudeDir()) {
-  try {
-    const cmd = JSON.parse(readFileSync(path.join(dir, "settings.json"), "utf8"))?.statusLine?.command ?? "";
-    return /usage\.mjs"?\s+statusline\b/.test(cmd);
-  } catch { return false; }
+  for (const file of ["settings.local.json", "settings.json"]) {
+    let cmd;
+    try { cmd = JSON.parse(readFileSync(path.join(dir, file), "utf8"))?.statusLine?.command; } catch { continue; }
+    if (typeof cmd === "string") return /usage\.mjs['"]?\s+statusline\b/.test(cmd);
+  }
+  return false;
 }
 
 // One line per switch: "show-model: on (the session's model)".
@@ -1273,21 +1278,19 @@ export function statusText({ cache, state = {}, now = Date.now(), book = null, l
   const parts = [];
   if (show.model && model) parts.push(model);
   if (show.email && account?.email) parts.push(others ? `${account.email} (+${others})` : account.email);
-  if (!windows.length) {
-    if (show.usage) parts.push(cache?.error ? `usage: ${cache.error}` : "usage: no reading yet");
-  } else {
-    if (show.usage) {
-      for (const w of windows) {
-        const label = `${shortLabel(w.name)} ${Math.round(w.pct)}%`;
-        parts.push(w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label);
-      }
+  if (show.usage) {
+    if (!windows.length) parts.push(cache?.error ? `usage: ${cache.error}` : "usage: no reading yet");
+    for (const w of windows) {
+      const label = `${shortLabel(w.name)} ${Math.round(w.pct)}%`;
+      parts.push(w.resetsAt && w.resetsAt > now ? `${label} (resets ${shortLocalTime(w.resetsAt, now)})` : label);
     }
-    if (state.phase === "handoff" && resetEarly({ windows, state, now, threshold: state.threshold ?? DEFAULT_THRESHOLD })) parts.push("reset early, resuming");
-    else if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
-    else if (state.phase === "resuming") parts.push("resuming");
-    const ageMin = cache.at ? Math.round((now - cache.at) / 60_000) : null;
-    if (show.usage && ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
   }
+  // A handoff in progress is named with or without a reading, and with usage off.
+  if (state.phase === "handoff" && windows.length && resetEarly({ windows, state, now, threshold: state.threshold ?? DEFAULT_THRESHOLD })) parts.push("reset early, resuming");
+  else if (state.phase === "handoff" && state.resumeAt) parts.push(`handing off, back ${shortLocalTime(Date.parse(state.resumeAt), now)}`);
+  else if (state.phase === "resuming") parts.push("resuming");
+  const ageMin = windows.length && cache?.at ? Math.round((now - cache.at) / 60_000) : null;
+  if (show.usage && ageMin != null && ageMin >= 15) parts.push(`${ageMin} min old`);
   if (show.email && !account?.email && others) parts.push(`${others} account${others === 1 ? "" : "s"}`);
   const text = parts.join(" · ");
   return link && text ? hyperlink(link, text) : text;
@@ -1718,7 +1721,7 @@ async function main(argv) {
     case "show": {
       const [part, value] = args;
       if (!part) return out(showText(showSettings()));
-      if (!SHOW_PARTS[part]) throw new Error(`show: no part ${part}; parts: ${Object.keys(SHOW_PARTS).join(", ")}`);
+      if (!isPart(part)) throw new Error(`show: no part ${part}; parts: ${Object.keys(SHOW_PARTS).join(", ")}`);
       const show = value ? setShow(part, value) : showSettings();
       const lines = [showText(show, [part])];
       if (value && !Object.values(show).some(Boolean)) lines.push("Every part is off, so the status line is empty.");
