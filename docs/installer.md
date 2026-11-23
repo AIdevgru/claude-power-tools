@@ -27,7 +27,7 @@ The skills come in the same groups as the three plugins, plus graphify on its ow
 
 | Group | Same as plugin | Skills |
 |---|---|---|
-| `core` (default) | `power-tools` | all, fleet-manager, fleet-status, pr-dashboard, request-inbox, usage-handoff, implement-to-pr, finish-pr, ticket-to-pr, ticket-triage, issues-to-plan, combine-prs, drain-pr-queue, git-guard, update |
+| `core` (default) | `power-tools` | all, fleet-manager, fleet-status, pr-dashboard, request-inbox, usage-handoff, show-model, show-email, show-usage, implement-to-pr, finish-pr, ticket-to-pr, ticket-triage, issues-to-plan, combine-prs, drain-pr-queue, git-guard, update |
 | `ui` | `power-tools-ui` | ux-mockup, ui-critique-loop, ui-finalize, video, impeccable (and its 4 subagents) |
 | `projects` | `power-tools-projects` | new-project, project, deploy |
 | `graphify` | none | graphify |
@@ -46,8 +46,23 @@ skill from a group you left out say which plugin or group to add, and skip that 
 | `--all` | Install `core`, `ui` and `projects`. graphify still needs `--with graphify`. |
 | `--skills a,b` | Install only these skills. |
 | `--force` | Replace installed skills. The old copies move to `~/.claude/backups/claude-power-tools/<UTC>/`, outside `skills/`, so they don't load as duplicates. |
-| `--no-hooks` | Leave `settings.json` alone. |
+| `--no-hooks` | Leave `settings.json` alone: no hooks, no setting defaults. |
+| `--no-remote-control` | Store `remoteControlAtStartup: false` instead of turning Remote Control on (see below). |
 | `--target DIR` | Install into `DIR` instead of `~/.claude` (or `CLAUDE_CONFIG_DIR`). |
+
+## Settings it turns on
+
+Besides hooks, an install of the `core` group (a plain run, `--all`, or `/update` of an install
+that recorded `core`) sets Claude Code settings the collection turns on by default, each only
+when `settings.json` doesn't have it yet. `--skills pr-dashboard` alone gets only the skill. A value you set in `/config` or by hand always stays,
+and `/update` runs the same installer, so it keeps your choice too.
+
+| Setting | Default | Off switch |
+|---|---|---|
+| `remoteControlAtStartup` (Remote Control in every new session; `/config`: "Enable Remote Control for all sessions") | `true` | `--no-remote-control` stores `false`, or set it to `false` in `/config`. Its `default` there removes the key, so the next run sets it again. |
+
+The status line's parts aren't Claude Code settings: `/show-model`, `/show-email` and
+`/show-usage` switch them, and all start on.
 
 ## graphify is opt-in
 

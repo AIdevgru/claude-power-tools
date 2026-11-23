@@ -16,7 +16,9 @@
 //                   so `git pull` here updates the installed skills
 //   --force         replace skills that already exist; the old copies move to
 //                   <target>/backups/claude-power-tools/<UTC>/, outside skills/ so they don't load
-//   --no-hooks      don't touch settings.json
+//   --no-hooks      don't touch settings.json (no hooks, no setting defaults)
+//   --no-remote-control
+//                   store remoteControlAtStartup: false instead of the default true
 //   --dry-run       print what would change, change nothing
 //
 // Where each skill lives (plugins/<plugin>/skills/<name>, extras/<name>) comes from layout.mjs.
@@ -31,6 +33,11 @@
 // link is broken or points elsewhere in this clone, and reports it. A copy run never links: it
 // replaces a selected stale link with a copy (backed up) and names the recorded ones it left.
 // The manifest also records the groups asked for by name, which /update uses for new skills.
+//
+// Claude Code settings the collection turns on by default (SETTING_DEFAULTS) come with the core
+// group (a plain run, --all, or /update of an install that recorded core). They are written to
+// settings.json only when it doesn't have them yet, so a value the owner set in /config or by hand
+// always stays. Its --no-<flag> writes the off value, which later runs and /update then keep.
 //
 // A recorded skill that a release retired (RETIRED in layout.mjs) is taken out on every run: its
 // link is removed, a copied folder moves to the backup folder, and it leaves the manifest. An
@@ -48,6 +55,12 @@ const PLUGIN_ROOT = "${CLAUDE_PLUGIN_ROOT}";
 export const DEFAULT_GROUPS = ["core"];
 export const ALL_GROUPS = Object.values(PLUGINS).map((p) => p.group);
 export const MANIFEST = "claude-power-tools.json";
+
+// Claude Code settings an install turns on unless settings.json already has them. `flag` names the
+// --no-<flag> option that stores `off` instead; `what` is how the install log describes it.
+export const SETTING_DEFAULTS = [
+  { key: "remoteControlAtStartup", on: true, off: false, flag: "remote-control", what: "Remote Control in every new session; /config's \"Enable Remote Control for all sessions\" changes it" },
+];
 
 export const availableSkills = (repo = REPO) => Object.keys(skillMap(repo)).sort();
 
@@ -84,9 +97,14 @@ export function graphifyHint(cli, skill) {
 const list = (v) => v.split(",").map((s) => s.trim()).filter(Boolean);
 
 export function parseArgs(argv) {
-  const opts = { target: process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude"), skills: null, with: [], all: false, source: REPO, link: false, force: false, hooks: true, dryRun: false };
+  const opts = { target: process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude"), skills: null, with: [], all: false, source: REPO, link: false, force: false, hooks: true, off: [], dryRun: false };
+  const offFlags = new Map(SETTING_DEFAULTS.map((d) => [`--no-${d.flag}`, d.flag]));
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    if (offFlags.has(a)) {
+      opts.off.push(offFlags.get(a));
+      continue;
+    }
     if (a === "--target") opts.target = argv[++i];
     else if (a === "--skills") opts.skills = list(argv[++i]);
     else if (a === "--with") opts.with.push(...list(argv[++i]));
@@ -139,6 +157,22 @@ export function mergeHooks(settings, hooks) {
     }
   }
   return { settings: merged, added };
+}
+
+// Fills in each SETTING_DEFAULTS key settings.json doesn't have. A flag in `off` writes its off
+// value even over a value already there, since the owner just asked for it. With defaults false
+// (an install without the core group) only those flags are written.
+export function applySettingDefaults(settings, off = [], { defaults = true } = {}) {
+  const merged = structuredClone(settings);
+  const set = [];
+  for (const d of SETTING_DEFAULTS) {
+    if (!defaults && !off.includes(d.flag)) continue;
+    const value = off.includes(d.flag) ? d.off : d.on;
+    if (Object.hasOwn(merged, d.key) && (merged[d.key] === value || !off.includes(d.flag))) continue;
+    merged[d.key] = value;
+    set.push({ key: d.key, value, what: d.what, flag: d.flag });
+  }
+  return { settings: merged, set };
 }
 
 // The groups a run asks for by name: the core group (or every plugin group with --all) plus each
@@ -217,7 +251,7 @@ export function install(opts, log = console.log) {
 
   const skillsDir = path.join(opts.target, "skills");
   const backupDir = path.join(opts.target, "backups", "claude-power-tools", stamp());
-  const report = { installed: [], relinked: [], retired: [], replacedLinks: [], staleLinks: [], skipped: [], backedUp: [], agents: [], agentsSkipped: [], hooksAdded: [], settingsBackup: null, notes: [], manifest: null };
+  const report = { installed: [], relinked: [], retired: [], replacedLinks: [], staleLinks: [], skipped: [], backedUp: [], agents: [], agentsSkipped: [], hooksAdded: [], settingsSet: [], settingsBackup: null, notes: [], manifest: null };
   if (!opts.dryRun) mkdirSync(skillsDir, { recursive: true });
   const link = (src, dest) => symlinkSync(src, dest, process.platform === "win32" ? "junction" : "dir");
   const isStale = (name) => staleLink(path.join(skillsDir, name), path.join(repo, skills[name].dir), repo);
@@ -342,9 +376,14 @@ export function install(opts, log = console.log) {
         throw new Error(`${settingsPath} is not valid JSON (${e.message}); fix it, or rerun with --no-hooks`);
       }
     }
-    const { settings: merged, added } = mergeHooks(settings, hooksFor(selected, skillsDir, repo));
+    const { settings: hooked, added } = mergeHooks(settings, hooksFor(selected, skillsDir, repo));
+    // The defaults come with the core group, as its plugin's enhancements: a plain run, --all, or
+    // /update of an install that recorded core. `--skills pr-dashboard` alone gets only the skill.
+    const core = [...selectedGroups(opts), ...(before?.groups ?? groupsOf(recorded, skills))].includes("core");
+    const { settings: merged, set } = applySettingDefaults(hooked, opts.off ?? [], { defaults: core });
     report.hooksAdded = added;
-    if (added.length && !opts.dryRun) {
+    report.settingsSet = set;
+    if ((added.length || set.length) && !opts.dryRun) {
       if (existsSync(settingsPath)) {
         report.settingsBackup = slash(`${settingsPath}.bak-${stamp()}`);
         cpSync(settingsPath, report.settingsBackup);
@@ -383,11 +422,15 @@ export function install(opts, log = console.log) {
     if (report.hooksAdded.length) {
       log(`${pre}add ${report.hooksAdded.length} hook(s) to ${slash(path.join(opts.target, "settings.json"))}:`);
       for (const h of report.hooksAdded) log(`  ${h}`);
-      if (report.settingsBackup) log(`settings backup: ${report.settingsBackup}`);
       if (!opts.dryRun) log("Open /hooks once (or restart Claude Code) so running sessions pick the hooks up.");
     } else {
-      log("hooks: already present, settings.json unchanged");
+      log("hooks: already present");
     }
+    for (const s of report.settingsSet) {
+      log(`${pre}set ${s.key}: ${JSON.stringify(s.value)} in settings.json (${s.what}${s.value === SETTING_DEFAULTS.find((d) => d.key === s.key).on ? `; --no-${s.flag} turns it off` : ""})`);
+    }
+    if (report.settingsBackup) log(`settings backup: ${report.settingsBackup}`);
+    else if (!report.hooksAdded.length && !report.settingsSet.length) log("settings.json unchanged");
   }
   if (!opts.skills) {
     const inGroup = Object.fromEntries(GROUPS.map((g) => [g, skillsInGroups([g], repo, skills)]));
